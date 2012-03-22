@@ -1503,28 +1503,38 @@ static void shrink_active_list(unsigned long nr_to_scan,
 }
 
 #ifdef CONFIG_SWAP
-static int inactive_anon_is_low_global(struct zone *zone)
-{
-	unsigned long active, inactive;
-
-	active = zone_page_state(zone, NR_ACTIVE_ANON);
-	inactive = zone_page_state(zone, NR_INACTIVE_ANON);
-
-	if (inactive * zone->inactive_ratio < active)
-		return 1;
-
-	return 0;
-}
-
 /**
  * inactive_anon_is_low - check if anonymous pages need to be deactivated
  * @lruvec: LRU vector to check
  *
  * Returns true if the zone does not have enough inactive anon pages,
  * meaning some active anon pages need to be deactivated.
+ *
+ * The inactive anon list should be small enough that the VM never has to
+ * do too much work, but large enough that each inactive page has a chance
+ * to be referenced again before it is swapped out.
+ *
+ * The inactive_anon ratio is the target ratio of ACTIVE_ANON to
+ * INACTIVE_ANON pages on this zone's LRU, maintained by the
+ * pageout code. A zone->inactive_ratio of 3 means 3:1 or 25% of
+ * the anonymous pages are kept on the inactive list.
+ *
+ * total     target    max
+ * memory    ratio     inactive anon
+ * -------------------------------------
+ *   10MB       1         5MB
+ *  100MB       1        50MB
+ *    1GB       3       250MB
+ *   10GB      10       0.9GB
+ *  100GB      31         3GB
+ *    1TB     101        10GB
+ *   10TB     320        32GB
  */
 static int inactive_anon_is_low(struct lruvec *lruvec)
 {
+	unsigned long active, inactive;
+	unsigned int gb, ratio;
+
 	/*
 	 * If we don't have swap space, anonymous page deactivation
 	 * is pointless.
@@ -1532,10 +1542,17 @@ static int inactive_anon_is_low(struct lruvec *lruvec)
 	if (!total_swap_pages)
 		return 0;
 
-	if (!mem_cgroup_disabled())
-		return mem_cgroup_inactive_anon_is_low(lruvec);
+	active = get_lruvec_size(lruvec, LRU_ACTIVE_ANON);
+	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_ANON);
 
-	return inactive_anon_is_low_global(lruvec_zone(lruvec));
+	/* Total size in gigabytes */
+	gb = (active + inactive) >> (30 - PAGE_SHIFT);
+	if (gb)
+		ratio = int_sqrt(10 * gb);
+	else
+		ratio = 1;
+
+	return inactive * ratio < active;
 }
 #else
 static inline int inactive_anon_is_low(struct lruvec *lruvec)
@@ -1543,16 +1560,6 @@ static inline int inactive_anon_is_low(struct lruvec *lruvec)
 	return 0;
 }
 #endif
-
-static int inactive_file_is_low_global(struct zone *zone)
-{
-	unsigned long active, inactive;
-
-	active = zone_page_state(zone, NR_ACTIVE_FILE);
-	inactive = zone_page_state(zone, NR_INACTIVE_FILE);
-
-	return (active > inactive);
-}
 
 /**
  * inactive_file_is_low - check if file pages need to be deactivated
@@ -1570,10 +1577,12 @@ static int inactive_file_is_low_global(struct zone *zone)
  */
 static int inactive_file_is_low(struct lruvec *lruvec)
 {
-	if (!mem_cgroup_disabled())
-		return mem_cgroup_inactive_file_is_low(lruvec);
+	unsigned long active, inactive;
 
-	return inactive_file_is_low_global(lruvec_zone(lruvec));
+	active = get_lruvec_size(lruvec, LRU_ACTIVE_FILE);
+	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_FILE);
+
+	return inactive < active;
 }
 
 static int inactive_list_is_low(struct lruvec *lruvec, int file)

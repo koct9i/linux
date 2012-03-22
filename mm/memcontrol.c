@@ -1170,36 +1170,6 @@ int task_in_mem_cgroup(struct task_struct *task, const struct mem_cgroup *memcg)
 	return ret;
 }
 
-int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
-{
-	unsigned long inactive_ratio;
-	unsigned long inactive;
-	unsigned long active;
-	unsigned long gb;
-
-	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_ANON);
-	active = get_lruvec_size(lruvec, LRU_ACTIVE_ANON);
-
-	gb = (inactive + active) >> (30 - PAGE_SHIFT);
-	if (gb)
-		inactive_ratio = int_sqrt(10 * gb);
-	else
-		inactive_ratio = 1;
-
-	return inactive * inactive_ratio < active;
-}
-
-int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec)
-{
-	unsigned long active;
-	unsigned long inactive;
-
-	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_FILE);
-	active = get_lruvec_size(lruvec, LRU_ACTIVE_FILE);
-
-	return (active > inactive);
-}
-
 #define mem_cgroup_from_res_counter(counter, member)	\
 	container_of(counter, struct mem_cgroup, member)
 

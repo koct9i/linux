@@ -114,8 +114,6 @@ void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
 /*
  * For memory reclaim.
  */
-int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec);
-int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
@@ -311,18 +309,6 @@ static inline void mem_cgroup_iter_break(struct mem_cgroup *root,
 static inline bool mem_cgroup_disabled(void)
 {
 	return true;
-}
-
-static inline int
-mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
-{
-	return 1;
-}
-
-static inline int
-mem_cgroup_inactive_file_is_low(struct lruvec *lruvec)
-{
-	return 1;
 }
 
 static inline void
