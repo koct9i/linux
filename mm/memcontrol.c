@@ -4128,26 +4128,31 @@ static int mem_control_stat_show(struct cgroup *cont, struct cftype *cft,
 
 #ifdef CONFIG_DEBUG_VM
 	{
-		int nid, zid;
+		int nid, zid, lru;
 		struct mem_cgroup_per_zone *mz;
 		struct zone_reclaim_stat *rstat;
-		unsigned long recent_rotated[2] = {0, 0};
-		unsigned long recent_scanned[2] = {0, 0};
+		unsigned long recent_rotated[NR_EVICTABLE_LRU_LISTS];
 
+		memset(recent_rotated, 0, sizeof(recent_rotated));
 		for_each_online_node(nid)
 			for (zid = 0; zid < MAX_NR_ZONES; zid++) {
 				mz = mem_cgroup_zoneinfo(memcg, nid, zid);
 				rstat = &mz->lruvec.reclaim_stat;
-
-				recent_rotated[0] += rstat->recent_rotated[0];
-				recent_rotated[1] += rstat->recent_rotated[1];
-				recent_scanned[0] += rstat->recent_scanned[0];
-				recent_scanned[1] += rstat->recent_scanned[1];
+				for_each_evictable_lru(lru)
+					recent_rotated[lru] +=
+						rstat->recent_rotated[lru];
 			}
-		cb->fill(cb, "recent_rotated_anon", recent_rotated[0]);
-		cb->fill(cb, "recent_rotated_file", recent_rotated[1]);
-		cb->fill(cb, "recent_scanned_anon", recent_scanned[0]);
-		cb->fill(cb, "recent_scanned_file", recent_scanned[1]);
+
+		cb->fill(cb, "recent_rotated_anon",
+				recent_rotated[LRU_ACTIVE_ANON]);
+		cb->fill(cb, "recent_rotated_file",
+				recent_rotated[LRU_ACTIVE_FILE]);
+		cb->fill(cb, "recent_scanned_anon",
+				recent_rotated[LRU_ACTIVE_ANON] +
+				recent_rotated[LRU_INACTIVE_ANON]);
+		cb->fill(cb, "recent_scanned_file",
+				recent_rotated[LRU_ACTIVE_FILE] +
+				recent_rotated[LRU_INACTIVE_FILE]);
 	}
 #endif
 

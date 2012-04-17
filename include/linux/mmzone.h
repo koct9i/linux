@@ -137,12 +137,14 @@ enum lru_list {
 	LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,
 	LRU_ACTIVE_FILE = LRU_BASE + LRU_FILE + LRU_ACTIVE,
 	LRU_UNEVICTABLE,
-	NR_LRU_LISTS
+	NR_LRU_LISTS,
+	NR_EVICTABLE_LRU_LISTS = LRU_UNEVICTABLE,
 };
 
 #define for_each_lru(lru) for (lru = 0; lru < NR_LRU_LISTS; lru++)
 
-#define for_each_evictable_lru(lru) for (lru = 0; lru <= LRU_ACTIVE_FILE; lru++)
+#define for_each_evictable_lru(lru) \
+	for (lru = 0; lru < NR_EVICTABLE_LRU_LISTS; lru++)
 
 static inline int is_file_lru(enum lru_list lru)
 {
@@ -165,11 +167,8 @@ struct zone_reclaim_stat {
 	 * mem/swap backed and file backed pages are refeferenced.
 	 * The higher the rotated/scanned ratio, the more valuable
 	 * that cache is.
-	 *
-	 * The anon LRU stats live in [0], file LRU stats in [1]
 	 */
-	unsigned long		recent_rotated[2];
-	unsigned long		recent_scanned[2];
+	unsigned long		recent_rotated[NR_EVICTABLE_LRU_LISTS];
 };
 
 struct lruvec {

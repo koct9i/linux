@@ -280,21 +280,15 @@ void rotate_reclaimable_page(struct page *page)
 	}
 }
 
-static void update_page_reclaim_stat(struct lruvec *lruvec,
-				     int file, int rotated)
+static void update_page_reclaim_stat(struct lruvec *lruvec, enum lru_list lru)
 {
-	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
-
-	reclaim_stat->recent_scanned[file]++;
-	if (rotated)
-		reclaim_stat->recent_rotated[file]++;
+	lruvec->reclaim_stat.recent_rotated[lru]++;
 }
 
 static void __activate_page(struct lruvec *lruvec,
 			    struct page *page, void *arg)
 {
 	if (PageLRU(page) && !PageActive(page) && !PageUnevictable(page)) {
-		int file = page_is_file_cache(page);
 		int lru = page_lru_base_type(page);
 
 		del_page_from_lruvec(lruvec, page, lru);
@@ -303,7 +297,7 @@ static void __activate_page(struct lruvec *lruvec,
 		add_page_to_lruvec(lruvec, page, lru);
 		__count_vm_event(PGACTIVATE);
 
-		update_page_reclaim_stat(lruvec, file, 1);
+		update_page_reclaim_stat(lruvec, lru);
 	}
 }
 
@@ -481,7 +475,7 @@ static void lru_deactivate_fn(struct lruvec *lruvec,
 
 	if (active)
 		__count_vm_event(PGDEACTIVATE);
-	update_page_reclaim_stat(lruvec, file, 0);
+	update_page_reclaim_stat(lruvec, lru);
 }
 
 /*
@@ -647,9 +641,7 @@ EXPORT_SYMBOL(__pagevec_release);
 void lru_add_page_tail(struct lruvec *lruvec,
 		       struct page *page, struct page *page_tail)
 {
-	int uninitialized_var(active);
 	enum lru_list lru;
-	const int file = 0;
 
 	VM_BUG_ON(!PageHead(page));
 	VM_BUG_ON(PageCompound(page_tail));
@@ -661,12 +653,9 @@ void lru_add_page_tail(struct lruvec *lruvec,
 	if (page_evictable(page_tail, NULL)) {
 		if (PageActive(page)) {
 			SetPageActive(page_tail);
-			active = 1;
 			lru = LRU_ACTIVE_ANON;
-		} else {
-			active = 0;
+		} else
 			lru = LRU_INACTIVE_ANON;
-		}
 	} else {
 		SetPageUnevictable(page_tail);
 		lru = LRU_UNEVICTABLE;
@@ -689,8 +678,8 @@ void lru_add_page_tail(struct lruvec *lruvec,
 		list_move_tail(&page_tail->lru, list_head);
 	}
 
-	if (!PageUnevictable(page))
-		update_page_reclaim_stat(lruvec, file, active);
+	if (!is_unevictable_lru(lru))
+		update_page_reclaim_stat(lruvec, lru);
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
@@ -698,19 +687,17 @@ static void __pagevec_lru_add_fn(struct lruvec *lruvec,
 				 struct page *page, void *arg)
 {
 	enum lru_list lru = (enum lru_list)arg;
-	int file = is_file_lru(lru);
-	int active = is_active_lru(lru);
 
 	VM_BUG_ON(PageActive(page));
 	VM_BUG_ON(PageUnevictable(page));
 	VM_BUG_ON(PageLRU(page));
 
 	SetPageLRU(page);
-	if (active)
+	if (is_active_lru(lru))
 		SetPageActive(page);
 
 	add_page_to_lruvec(lruvec, page, lru);
-	update_page_reclaim_stat(lruvec, file, active);
+	update_page_reclaim_stat(lruvec, lru);
 }
 
 /*
