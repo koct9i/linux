@@ -236,8 +236,7 @@ static void pagevec_move_tail_fn(struct page *page, void *arg)
 		enum lru_list lru = page_lru_base_type(page);
 		struct lruvec *lruvec;
 
-		lruvec = mem_cgroup_lru_move_lists(page_zone(page),
-						   page, lru, lru);
+		lruvec = mem_cgroup_page_lruvec(page_zone(page), page);
 		list_move_tail(&page->lru, &lruvec->lists[lru]);
 		(*pgmoved)++;
 	}
@@ -475,7 +474,7 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 		 * The page's writeback ends up during pagevec
 		 * We moves tha page into tail of inactive.
 		 */
-		lruvec = mem_cgroup_lru_move_lists(zone, page, lru, lru);
+		lruvec = mem_cgroup_page_lruvec(zone, page);
 		list_move_tail(&page->lru, &lruvec->lists[lru]);
 		__count_vm_event(PGROTATED);
 	}

@@ -24,19 +24,25 @@ static inline int page_is_file_cache(struct page *page)
 static __always_inline void
 add_page_to_lru_list(struct zone *zone, struct page *page, enum lru_list lru)
 {
+	int numpages = hpage_nr_pages(page);
 	struct lruvec *lruvec;
 
-	lruvec = mem_cgroup_lru_add_list(zone, page, lru);
+	lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 	list_add(&page->lru, &lruvec->lists[lru]);
-	__mod_zone_page_state(zone, NR_LRU_BASE + lru, hpage_nr_pages(page));
+	mem_cgroup_mod_lruvec_size(lruvec, lru, numpages);
+	__mod_zone_page_state(zone, NR_LRU_BASE + lru, numpages);
 }
 
 static __always_inline void
 del_page_from_lru_list(struct zone *zone, struct page *page, enum lru_list lru)
 {
-	mem_cgroup_lru_del_list(page, lru);
+	int numpages = hpage_nr_pages(page);
+	struct lruvec *lruvec;
+
+	lruvec = mem_cgroup_page_lruvec(zone, page);
 	list_del(&page->lru);
-	__mod_zone_page_state(zone, NR_LRU_BASE + lru, -hpage_nr_pages(page));
+	mem_cgroup_mod_lruvec_size(lruvec, lru, -numpages);
+	__mod_zone_page_state(zone, NR_LRU_BASE + lru, -numpages);
 }
 
 /**

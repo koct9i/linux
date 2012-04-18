@@ -63,11 +63,8 @@ extern int mem_cgroup_cache_charge(struct page *page, struct mm_struct *mm,
 					gfp_t gfp_mask);
 
 struct lruvec *mem_cgroup_zone_lruvec(struct zone *, struct mem_cgroup *);
-struct lruvec *mem_cgroup_lru_add_list(struct zone *, struct page *,
-				       enum lru_list);
-void mem_cgroup_lru_del_list(struct page *, enum lru_list);
-struct lruvec *mem_cgroup_lru_move_lists(struct zone *, struct page *,
-					 enum lru_list, enum lru_list);
+struct lruvec *mem_cgroup_page_lruvec(struct zone *, struct page *);
+struct lruvec *mem_cgroup_page_lruvec_putback(struct zone *, struct page *);
 
 /* For coalescing uncharge for reducing memcg' overhead*/
 extern void mem_cgroup_uncharge_start(void);
@@ -121,6 +118,7 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec);
 int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list);
+void mem_cgroup_mod_lruvec_size(struct lruvec *, enum lru_list lru, int delta);
 struct zone_reclaim_stat*
 mem_cgroup_get_reclaim_stat_from_page(struct page *page);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
@@ -249,21 +247,14 @@ static inline struct lruvec *mem_cgroup_zone_lruvec(struct zone *zone,
 	return &zone->lruvec;
 }
 
-static inline struct lruvec *mem_cgroup_lru_add_list(struct zone *zone,
-						     struct page *page,
-						     enum lru_list lru)
+static inline struct lruvec *
+mem_cgroup_zone_lruvec(struct zone *zone, struct page *page)
 {
 	return &zone->lruvec;
 }
 
-static inline void mem_cgroup_lru_del_list(struct page *page, enum lru_list lru)
-{
-}
-
-static inline struct lruvec *mem_cgroup_lru_move_lists(struct zone *zone,
-						       struct page *page,
-						       enum lru_list from,
-						       enum lru_list to)
+static inline struct lruvec *
+mem_cgroup_page_lruvec_putback(struct zone *zone, struct page *page)
 {
 	return &zone->lruvec;
 }
@@ -342,6 +333,11 @@ static inline unsigned long
 mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
 {
 	return 0;
+}
+
+static inline void
+mem_cgroup_mod_lruvec_size(struct lruvec *lrivec, enum lru_list lru, int delta)
+{
 }
 
 static inline struct zone_reclaim_stat*

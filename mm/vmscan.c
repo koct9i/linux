@@ -1034,6 +1034,7 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 	for (scan = 0; scan < nr_to_scan && !list_empty(src); scan++) {
 		struct page *page;
+		int numpages;
 
 		page = lru_to_page(src);
 		prefetchw_prev_lru_page(page, src, flags);
@@ -1042,9 +1043,10 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 		switch (__isolate_lru_page(page, mode)) {
 		case 0:
-			mem_cgroup_lru_del_list(page, lru);
 			list_move(&page->lru, dst);
-			nr_taken += hpage_nr_pages(page);
+			numpages = hpage_nr_pages(page);
+			mem_cgroup_mod_lruvec_size(lruvec, lru, -numpages);
+			nr_taken += numpages;
 			break;
 
 		case -EBUSY:
@@ -1375,15 +1377,18 @@ static void move_active_pages_to_lru(struct zone *zone,
 
 	while (!list_empty(list)) {
 		struct lruvec *lruvec;
+		int numpages;
 
 		page = lru_to_page(list);
 
 		VM_BUG_ON(PageLRU(page));
 		SetPageLRU(page);
 
-		lruvec = mem_cgroup_lru_add_list(zone, page, lru);
+		lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 		list_move(&page->lru, &lruvec->lists[lru]);
-		pgmoved += hpage_nr_pages(page);
+		numpages = hpage_nr_pages(page);
+		mem_cgroup_mod_lruvec_size(lruvec, lru, numpages);
+		pgmoved += numpages;
 
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
@@ -3301,9 +3306,10 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
 			VM_BUG_ON(PageActive(page));
 			ClearPageUnevictable(page);
 			__dec_zone_state(zone, NR_UNEVICTABLE);
-			lruvec = mem_cgroup_lru_move_lists(zone, page,
-						LRU_UNEVICTABLE, lru);
+			lruvec = mem_cgroup_page_lruvec(zone, page);
 			list_move(&page->lru, &lruvec->lists[lru]);
+			mem_cgroup_mod_lruvec_size(lruvec, LRU_UNEVICTABLE, -1);
+			mem_cgroup_mod_lruvec_size(lruvec, lru, 1);
 			__inc_zone_state(zone, NR_INACTIVE_ANON + lru);
 			pgrescued++;
 		}

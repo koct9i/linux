@@ -731,6 +731,18 @@ mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
 	return mz->lru_size[lru];
 }
 
+void
+mem_cgroup_mod_lruvec_size(struct lruvec *lruvec, enum lru_list lru, int delta)
+{
+	struct mem_cgroup_per_zone *mz;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	mz = container_of(lruvec, struct mem_cgroup_per_zone, lruvec);
+	mz->lru_size[lru] += delta;
+}
+
 static unsigned long
 mem_cgroup_zone_nr_lru_pages(struct mem_cgroup *memcg, int nid, int zid,
 			unsigned int lru_mask)
@@ -1054,19 +1066,45 @@ struct lruvec *mem_cgroup_zone_lruvec(struct zone *zone,
  */
 
 /**
- * mem_cgroup_lru_add_list - account for adding an lru page and return lruvec
- * @zone: zone of the page
- * @page: the page
- * @lru: current lru
+ * mem_cgroup_page_lruvec - get the LRU list vector for a page
+ * @zone: the zone where page is located
+ * @page: the page to get lruvec
  *
- * This function accounts for @page being added to @lru, and returns
- * the lruvec for the given @zone and the memcg @page is charged to.
- *
- * The callsite is then responsible for physically linking the page to
- * the returned lruvec->lists[@lru].
+ * Returns the lru list vector which holds given page.
+ * This can be the global zone lruvec, if the memory controller is disabled.
  */
-struct lruvec *mem_cgroup_lru_add_list(struct zone *zone, struct page *page,
-				       enum lru_list lru)
+struct lruvec *mem_cgroup_page_lruvec(struct zone *zone, struct page *page)
+{
+	struct mem_cgroup_per_zone *mz;
+	struct mem_cgroup *memcg;
+	struct page_cgroup *pc;
+
+	if (mem_cgroup_disabled())
+		return &zone->lruvec;
+
+	pc = lookup_page_cgroup(page);
+	memcg = pc->mem_cgroup;
+	VM_BUG_ON(!memcg);
+	mz = page_cgroup_zoneinfo(memcg, page);
+	return &mz->lruvec;
+}
+
+/**
+ * mem_cgroup_page_lruvec_putback - get the LRU list vector for a page
+ *				    before putting page back to LRU list
+ * @zone: the zone where page is located
+ * @page: the page to get lruvec
+ *
+ * Returns the lru list vector which holds given page.
+ * This can be the global zone lruvec, if the memory controller is disabled.
+ *
+ * Unlike to mem_cgroup_page_lruvec() this function moves unaccounted pages
+ * into root memory cgroup. Such pages does not holds their memory cgroup,
+ * so it can be removed while page was isolated. For newly allocated pages
+ * pointer to memory cgroups is uninitialized.
+ */
+struct lruvec *mem_cgroup_page_lruvec_putback(struct zone *zone,
+					      struct page *page)
 {
 	struct mem_cgroup_per_zone *mz;
 	struct mem_cgroup *memcg;
@@ -1091,61 +1129,7 @@ struct lruvec *mem_cgroup_lru_add_list(struct zone *zone, struct page *page,
 		pc->mem_cgroup = memcg = root_mem_cgroup;
 
 	mz = page_cgroup_zoneinfo(memcg, page);
-	/* compound_order() is stabilized through lru_lock */
-	mz->lru_size[lru] += 1 << compound_order(page);
 	return &mz->lruvec;
-}
-
-/**
- * mem_cgroup_lru_del_list - account for removing an lru page
- * @page: the page
- * @lru: target lru
- *
- * This function accounts for @page being removed from @lru.
- *
- * The callsite is then responsible for physically unlinking
- * @page->lru.
- */
-void mem_cgroup_lru_del_list(struct page *page, enum lru_list lru)
-{
-	struct mem_cgroup_per_zone *mz;
-	struct mem_cgroup *memcg;
-	struct page_cgroup *pc;
-
-	if (mem_cgroup_disabled())
-		return;
-
-	pc = lookup_page_cgroup(page);
-	memcg = pc->mem_cgroup;
-	VM_BUG_ON(!memcg);
-	mz = page_cgroup_zoneinfo(memcg, page);
-	/* huge page split is done under lru_lock. so, we have no races. */
-	VM_BUG_ON(mz->lru_size[lru] < (1 << compound_order(page)));
-	mz->lru_size[lru] -= 1 << compound_order(page);
-}
-
-/**
- * mem_cgroup_lru_move_lists - account for moving a page between lrus
- * @zone: zone of the page
- * @page: the page
- * @from: current lru
- * @to: target lru
- *
- * This function accounts for @page being moved between the lrus @from
- * and @to, and returns the lruvec for the given @zone and the memcg
- * @page is charged to.
- *
- * The callsite is then responsible for physically relinking
- * @page->lru to the returned lruvec->lists[@to].
- */
-struct lruvec *mem_cgroup_lru_move_lists(struct zone *zone,
-					 struct page *page,
-					 enum lru_list from,
-					 enum lru_list to)
-{
-	/* XXX: Optimize this, especially for @from == @to */
-	mem_cgroup_lru_del_list(page, from);
-	return mem_cgroup_lru_add_list(zone, page, to);
 }
 
 /*
