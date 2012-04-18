@@ -296,6 +296,7 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 	spin_lock_irq(&zone->lru_lock);
 	for (; low_pfn < end_pfn; low_pfn++) {
 		struct page *page;
+		struct lruvec *lruvec;
 		bool locked = true;
 
 		/* give a chance to irqs before checking need_resched() */
@@ -381,7 +382,8 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		VM_BUG_ON(PageTransCompound(page));
 
 		/* Successfully isolated */
-		del_page_from_lru_list(zone, page, page_lru(page));
+		lruvec = mem_cgroup_page_lruvec(zone, page);
+		del_page_from_lruvec(lruvec, page, page_lru(page));
 		list_add(&page->lru, migratelist);
 		cc->nr_migratepages++;
 		nr_isolated++;

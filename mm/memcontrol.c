@@ -2461,6 +2461,7 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
 				       bool lrucare)
 {
 	struct zone *uninitialized_var(zone);
+	struct lruvec *lruvec;
 	bool was_on_lru = false;
 	bool anon;
 
@@ -2484,7 +2485,8 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
 		spin_lock_irq(&zone->lru_lock);
 		if (PageLRU(page)) {
 			ClearPageLRU(page);
-			del_page_from_lru_list(zone, page, page_lru(page));
+			lruvec = mem_cgroup_page_lruvec(zone, page);
+			del_page_from_lruvec(lruvec, page, page_lru(page));
 			was_on_lru = true;
 		}
 	}
@@ -2504,7 +2506,8 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
 		if (was_on_lru) {
 			VM_BUG_ON(PageLRU(page));
 			SetPageLRU(page);
-			add_page_to_lru_list(zone, page, page_lru(page));
+			lruvec = mem_cgroup_page_lruvec(zone, page);
+			add_page_to_lruvec(lruvec, page, page_lru(page));
 		}
 		spin_unlock_irq(&zone->lru_lock);
 	}

@@ -1105,11 +1105,13 @@ int isolate_lru_page(struct page *page)
 		spin_lock_irq(&zone->lru_lock);
 		if (PageLRU(page)) {
 			int lru = page_lru(page);
+			struct lruvec *lruvec;
 			ret = 0;
 			get_page(page);
 			ClearPageLRU(page);
 
-			del_page_from_lru_list(zone, page, lru);
+			lruvec = mem_cgroup_page_lruvec(zone, page);
+			del_page_from_lruvec(lruvec, page, lru);
 		}
 		spin_unlock_irq(&zone->lru_lock);
 	}
@@ -1166,7 +1168,8 @@ putback_inactive_pages(struct lruvec *lruvec,
 		}
 		SetPageLRU(page);
 		lru = page_lru(page);
-		add_page_to_lru_list(zone, page, lru);
+		lruvec = mem_cgroup_page_lruvec_putback(zone, page);
+		add_page_to_lruvec(lruvec, page, lru);
 		if (is_active_lru(lru)) {
 			int file = is_file_lru(lru);
 			int numpages = hpage_nr_pages(page);
@@ -1175,7 +1178,7 @@ putback_inactive_pages(struct lruvec *lruvec,
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
 			__ClearPageActive(page);
-			del_page_from_lru_list(zone, page, lru);
+			del_page_from_lruvec(lruvec, page, lru);
 
 			if (unlikely(PageCompound(page))) {
 				spin_unlock_irq(&zone->lru_lock);
@@ -1393,7 +1396,7 @@ static void move_active_pages_to_lru(struct zone *zone,
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
 			__ClearPageActive(page);
-			del_page_from_lru_list(zone, page, lru);
+			del_page_from_lruvec(lruvec, page, lru);
 
 			if (unlikely(PageCompound(page))) {
 				spin_unlock_irq(&zone->lru_lock);
