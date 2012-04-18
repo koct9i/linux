@@ -4130,17 +4130,15 @@ static int mem_control_stat_show(struct cgroup *cont, struct cftype *cft,
 	{
 		int nid, zid, lru;
 		struct mem_cgroup_per_zone *mz;
-		struct zone_reclaim_stat *rstat;
 		unsigned long recent_rotated[NR_EVICTABLE_LRU_LISTS];
 
 		memset(recent_rotated, 0, sizeof(recent_rotated));
 		for_each_online_node(nid)
 			for (zid = 0; zid < MAX_NR_ZONES; zid++) {
 				mz = mem_cgroup_zoneinfo(memcg, nid, zid);
-				rstat = &mz->lruvec.reclaim_stat;
 				for_each_evictable_lru(lru)
 					recent_rotated[lru] +=
-						rstat->recent_rotated[lru];
+						mz->lruvec.recent_rotated[lru];
 			}
 
 		cb->fill(cb, "recent_rotated_anon",

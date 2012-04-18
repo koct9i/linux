@@ -1139,7 +1139,6 @@ static noinline_for_stack void
 putback_inactive_pages(struct lruvec *lruvec,
 		       struct list_head *page_list)
 {
-	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 	struct zone *zone = lruvec_zone(lruvec);
 	LIST_HEAD(pages_to_free);
 
@@ -1162,7 +1161,7 @@ putback_inactive_pages(struct lruvec *lruvec,
 		lru = page_lru(page);
 		lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 		add_page_to_lruvec(lruvec, page, lru);
-		reclaim_stat->recent_rotated[lru] += hpage_nr_pages(page);
+		lruvec->recent_rotated[lru] += hpage_nr_pages(page);
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
 			__ClearPageActive(page);
@@ -1247,7 +1246,6 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	isolate_mode_t isolate_mode = 0;
 	int file = is_file_lru(lru);
 	struct zone *zone = lruvec_zone(lruvec);
-	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 
 	while (unlikely(too_many_isolated(zone, file, sc))) {
 		congestion_wait(BLK_RW_ASYNC, HZ/10);
@@ -1293,7 +1291,7 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	 * Count reclaimed pages as rotated, this helps balance scan pressure
 	 * between file and anonymous pages in get_scan_ratio.
 	 */
-	reclaim_stat->recent_rotated[lru] += nr_reclaimed;
+	lruvec->recent_rotated[lru] += nr_reclaimed;
 
 	if (current_is_kswapd())
 		__count_vm_events(KSWAPD_STEAL, nr_reclaimed);
@@ -1414,7 +1412,6 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	LIST_HEAD(l_active);
 	LIST_HEAD(l_inactive);
 	struct page *page;
-	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 	unsigned long nr_rotated = 0;
 	isolate_mode_t isolate_mode = 0;
 	int file = is_file_lru(lru);
@@ -1489,7 +1486,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	 * helps balance scan pressure between file and anonymous pages in
 	 * get_scan_ratio.
 	 */
-	reclaim_stat->recent_rotated[lru] += nr_rotated;
+	lruvec->recent_rotated[lru] += nr_rotated;
 
 	move_active_pages_to_lru(zone, &l_active, &l_hold, lru);
 	move_active_pages_to_lru(zone, &l_inactive, &l_hold, lru - LRU_ACTIVE);
@@ -1625,8 +1622,7 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	unsigned long anon, file, free;
 	unsigned long anon_prio, file_prio;
 	unsigned long ap, fp;
-	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
-	unsigned long *recent_rotated = reclaim_stat->recent_rotated;
+	unsigned long *recent_rotated = lruvec->recent_rotated;
 	u64 fraction[2], denominator;
 	enum lru_list lru;
 	int noswap = 0;

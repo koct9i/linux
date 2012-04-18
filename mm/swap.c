@@ -282,7 +282,7 @@ void rotate_reclaimable_page(struct page *page)
 
 static void update_page_reclaim_stat(struct lruvec *lruvec, enum lru_list lru)
 {
-	lruvec->reclaim_stat.recent_rotated[lru]++;
+	lruvec->recent_rotated[lru]++;
 }
 
 static void __activate_page(struct lruvec *lruvec,

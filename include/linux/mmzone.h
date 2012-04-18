@@ -161,20 +161,16 @@ static inline int is_unevictable_lru(enum lru_list lru)
 	return (lru == LRU_UNEVICTABLE);
 }
 
-struct zone_reclaim_stat {
+struct lruvec {
+	struct list_head lists[NR_LRU_LISTS];
+	unsigned long lru_size[NR_LRU_LISTS];
 	/*
 	 * The pageout code in vmscan.c keeps track of how many of the
 	 * mem/swap backed and file backed pages are refeferenced.
 	 * The higher the rotated/scanned ratio, the more valuable
 	 * that cache is.
 	 */
-	unsigned long		recent_rotated[NR_EVICTABLE_LRU_LISTS];
-};
-
-struct lruvec {
-	struct list_head lists[NR_LRU_LISTS];
-	unsigned long lru_size[NR_LRU_LISTS];
-	struct zone_reclaim_stat reclaim_stat;
+	unsigned long recent_rotated[NR_EVICTABLE_LRU_LISTS];
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
 	struct zone *zone;
 #endif
