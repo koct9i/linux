@@ -2519,20 +2519,34 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
  * charge/uncharge will be never happen and move_account() is done under
  * compound_lock(), so we don't have to take care of races.
  */
-void mem_cgroup_split_huge_fixup(struct page *head)
+struct lruvec *mem_cgroup_split_huge_fixup(struct zone *zone, struct page *head)
 {
-	struct page_cgroup *head_pc = lookup_page_cgroup(head);
-	struct page_cgroup *pc;
+	struct page_cgroup *head_pc, *pc;
+	struct mem_cgroup *mem_cgroup;
 	int i;
 
 	if (mem_cgroup_disabled())
-		return;
+		return &zone->lruvec;
+
+	head_pc = lookup_page_cgroup(head);
+
+	/*
+	 * Use head_pc->mem_cgroup if head-page in LRU or charged,
+	 * otherwise head_pc->mem_cgroup pointer can be invalid.
+	 */
+	if (PageLRU(head) || PageCgroupUsed(head_pc))
+		mem_cgroup = head_pc->mem_cgroup;
+	else
+		mem_cgroup = root_mem_cgroup;
+
 	for (i = 1; i < HPAGE_PMD_NR; i++) {
 		pc = head_pc + i;
-		pc->mem_cgroup = head_pc->mem_cgroup;
+		pc->mem_cgroup = mem_cgroup;
 		smp_wmb();/* see __commit_charge() */
 		pc->flags = head_pc->flags & ~PCGF_NOCOPY_AT_SPLIT;
 	}
+
+	return mem_cgroup_zone_lruvec(zone, mem_cgroup);
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
