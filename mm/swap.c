@@ -204,12 +204,14 @@ void put_pages_list(struct list_head *pages)
 EXPORT_SYMBOL(put_pages_list);
 
 static void pagevec_lru_move_fn(struct pagevec *pvec,
-				void (*move_fn)(struct page *page, void *arg),
+				void (*move_fn)(struct lruvec *lruvec,
+						struct page *page, void *arg),
 				void *arg)
 {
 	int i;
 	struct zone *zone = NULL;
 	unsigned long flags = 0;
+	struct lruvec *lruvec;
 
 	for (i = 0; i < pagevec_count(pvec); i++) {
 		struct page *page = pvec->pages[i];
@@ -222,7 +224,9 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 			spin_lock_irqsave(&zone->lru_lock, flags);
 		}
 
-		(*move_fn)(page, arg);
+		lruvec = mem_cgroup_page_lruvec(zone, page);
+
+		(*move_fn)(lruvec, page, arg);
 	}
 	if (zone)
 		spin_unlock_irqrestore(&zone->lru_lock, flags);
@@ -230,15 +234,14 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 	pagevec_reinit(pvec);
 }
 
-static void pagevec_move_tail_fn(struct page *page, void *arg)
+static void pagevec_move_tail_fn(struct lruvec *lruvec,
+				 struct page *page, void *arg)
 {
 	int *pgmoved = arg;
 
 	if (PageLRU(page) && !PageActive(page) && !PageUnevictable(page)) {
 		enum lru_list lru = page_lru_base_type(page);
-		struct lruvec *lruvec;
 
-		lruvec = mem_cgroup_page_lruvec(page_zone(page), page);
 		list_move_tail(&page->lru, &lruvec->lists[lru]);
 		(*pgmoved)++;
 	}
@@ -287,14 +290,12 @@ static void update_page_reclaim_stat(struct lruvec *lruvec,
 		reclaim_stat->recent_rotated[file]++;
 }
 
-static void __activate_page(struct page *page, void *arg)
+static void __activate_page(struct lruvec *lruvec,
+			    struct page *page, void *arg)
 {
-	struct zone *zone = page_zone(page);
-
 	if (PageLRU(page) && !PageActive(page) && !PageUnevictable(page)) {
 		int file = page_is_file_cache(page);
 		int lru = page_lru_base_type(page);
-		struct lruvec *lruvec = mem_cgroup_page_lruvec(zone, page);
 
 		del_page_from_lruvec(lruvec, page, lru);
 		SetPageActive(page);
@@ -437,12 +438,11 @@ void add_page_to_unevictable_list(struct page *page)
  * be write it out by flusher threads as this is much more effective
  * than the single-page writeout from reclaim.
  */
-static void lru_deactivate_fn(struct page *page, void *arg)
+static void lru_deactivate_fn(struct lruvec *lruvec,
+			      struct page *page, void *arg)
 {
 	int lru, file;
 	bool active;
-	struct zone *zone = page_zone(page);
-	struct lruvec *lruvec;
 
 	if (!PageLRU(page))
 		return;
@@ -458,7 +458,6 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 
 	file = page_is_file_cache(page);
 	lru = page_lru_base_type(page);
-	lruvec = mem_cgroup_page_lruvec(zone, page);
 	del_page_from_lruvec(lruvec, page, lru + active);
 	ClearPageActive(page);
 	ClearPageReferenced(page);
@@ -698,13 +697,12 @@ void lru_add_page_tail(struct zone* zone,
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
-static void __pagevec_lru_add_fn(struct page *page, void *arg)
+static void __pagevec_lru_add_fn(struct lruvec *lruvec,
+				 struct page *page, void *arg)
 {
 	enum lru_list lru = (enum lru_list)arg;
-	struct zone *zone = page_zone(page);
 	int file = is_file_lru(lru);
 	int active = is_active_lru(lru);
-	struct lruvec *lruvec;
 
 	VM_BUG_ON(PageActive(page));
 	VM_BUG_ON(PageUnevictable(page));
@@ -714,7 +712,6 @@ static void __pagevec_lru_add_fn(struct page *page, void *arg)
 	if (active)
 		SetPageActive(page);
 
-	lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 	add_page_to_lruvec(lruvec, page, lru);
 	update_page_reclaim_stat(lruvec, file, active);
 }
