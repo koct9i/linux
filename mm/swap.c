@@ -277,14 +277,10 @@ void rotate_reclaimable_page(struct page *page)
 	}
 }
 
-static void update_page_reclaim_stat(struct zone *zone, struct page *page,
+static void update_page_reclaim_stat(struct lruvec *lruvec,
 				     int file, int rotated)
 {
-	struct zone_reclaim_stat *reclaim_stat;
-
-	reclaim_stat = mem_cgroup_get_reclaim_stat_from_page(page);
-	if (!reclaim_stat)
-		reclaim_stat = &zone->lruvec.reclaim_stat;
+	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 
 	reclaim_stat->recent_scanned[file]++;
 	if (rotated)
@@ -306,7 +302,7 @@ static void __activate_page(struct page *page, void *arg)
 		add_page_to_lruvec(lruvec, page, lru);
 		__count_vm_event(PGACTIVATE);
 
-		update_page_reclaim_stat(zone, page, file, 1);
+		update_page_reclaim_stat(lruvec, file, 1);
 	}
 }
 
@@ -486,7 +482,7 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 
 	if (active)
 		__count_vm_event(PGDEACTIVATE);
-	update_page_reclaim_stat(zone, page, file, 0);
+	update_page_reclaim_stat(lruvec, file, 0);
 }
 
 /*
@@ -655,6 +651,7 @@ void lru_add_page_tail(struct zone* zone,
 	int uninitialized_var(active);
 	enum lru_list lru;
 	const int file = 0;
+	struct lruvec *lruvec;
 
 	VM_BUG_ON(!PageHead(page));
 	VM_BUG_ON(PageCompound(page_tail));
@@ -677,11 +674,11 @@ void lru_add_page_tail(struct zone* zone,
 		lru = LRU_UNEVICTABLE;
 	}
 
-	if (likely(PageLRU(page)))
+	if (likely(PageLRU(page))) {
+		lruvec = mem_cgroup_page_lruvec(zone, page_tail);
 		list_add_tail(&page_tail->lru, &page->lru);
-	else {
+	} else {
 		struct list_head *list_head;
-		struct lruvec *lruvec;
 
 		/*
 		 * Head page has not yet been counted, as an hpage,
@@ -697,7 +694,7 @@ void lru_add_page_tail(struct zone* zone,
 	}
 
 	if (!PageUnevictable(page))
-		update_page_reclaim_stat(zone, page_tail, file, active);
+		update_page_reclaim_stat(lruvec, file, active);
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
@@ -719,7 +716,7 @@ static void __pagevec_lru_add_fn(struct page *page, void *arg)
 
 	lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 	add_page_to_lruvec(lruvec, page, lru);
-	update_page_reclaim_stat(zone, page, file, active);
+	update_page_reclaim_stat(lruvec, file, active);
 }
 
 /*

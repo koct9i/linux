@@ -119,8 +119,6 @@ int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
 unsigned long mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list);
 void mem_cgroup_mod_lruvec_size(struct lruvec *, enum lru_list lru, int delta);
-struct zone_reclaim_stat*
-mem_cgroup_get_reclaim_stat_from_page(struct page *page);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
 extern void mem_cgroup_replace_page_cache(struct page *oldpage,
@@ -338,12 +336,6 @@ mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
 static inline void
 mem_cgroup_mod_lruvec_size(struct lruvec *lrivec, enum lru_list lru, int delta)
 {
-}
-
-static inline struct zone_reclaim_stat*
-mem_cgroup_get_reclaim_stat_from_page(struct page *page)
-{
-	return NULL;
 }
 
 static inline void
