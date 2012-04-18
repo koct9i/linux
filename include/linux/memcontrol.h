@@ -117,8 +117,6 @@ void mem_cgroup_iter_break(struct mem_cgroup *, struct mem_cgroup *);
 int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec);
 int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec);
 int mem_cgroup_select_victim_node(struct mem_cgroup *memcg);
-unsigned long mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list);
-void mem_cgroup_mod_lruvec_size(struct lruvec *, enum lru_list lru, int delta);
 extern void mem_cgroup_print_oom_info(struct mem_cgroup *memcg,
 					struct task_struct *p);
 extern void mem_cgroup_replace_page_cache(struct page *oldpage,
@@ -325,17 +323,6 @@ static inline int
 mem_cgroup_inactive_file_is_low(struct lruvec *lruvec)
 {
 	return 1;
-}
-
-static inline unsigned long
-mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
-{
-	return 0;
-}
-
-static inline void
-mem_cgroup_mod_lruvec_size(struct lruvec *lrivec, enum lru_list lru, int delta)
-{
 }
 
 static inline void

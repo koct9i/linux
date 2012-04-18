@@ -145,14 +145,6 @@ static bool global_reclaim(struct scan_control *sc)
 }
 #endif
 
-static unsigned long get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
-{
-	if (!mem_cgroup_disabled())
-		return mem_cgroup_get_lruvec_size(lruvec, lru);
-
-	return zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru);
-}
-
 /*
  * Add a shrinker callback to be called from the vm
  */
@@ -1045,7 +1037,7 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 		case 0:
 			list_move(&page->lru, dst);
 			numpages = hpage_nr_pages(page);
-			mem_cgroup_mod_lruvec_size(lruvec, lru, -numpages);
+			mod_lruvec_size(lruvec, lru, -numpages);
 			nr_taken += numpages;
 			break;
 
@@ -1390,7 +1382,7 @@ static void move_active_pages_to_lru(struct zone *zone,
 		lruvec = mem_cgroup_page_lruvec_putback(zone, page);
 		list_move(&page->lru, &lruvec->lists[lru]);
 		numpages = hpage_nr_pages(page);
-		mem_cgroup_mod_lruvec_size(lruvec, lru, numpages);
+		mod_lruvec_size(lruvec, lru, numpages);
 		pgmoved += numpages;
 
 		if (put_page_testzero(page)) {
@@ -3311,8 +3303,8 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
 			__dec_zone_state(zone, NR_UNEVICTABLE);
 			lruvec = mem_cgroup_page_lruvec(zone, page);
 			list_move(&page->lru, &lruvec->lists[lru]);
-			mem_cgroup_mod_lruvec_size(lruvec, LRU_UNEVICTABLE, -1);
-			mem_cgroup_mod_lruvec_size(lruvec, lru, 1);
+			mod_lruvec_size(lruvec, LRU_UNEVICTABLE, -1);
+			mod_lruvec_size(lruvec, lru, 1);
 			__inc_zone_state(zone, NR_INACTIVE_ANON + lru);
 			pgrescued++;
 		}

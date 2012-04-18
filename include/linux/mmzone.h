@@ -174,6 +174,7 @@ struct zone_reclaim_stat {
 
 struct lruvec {
 	struct list_head lists[NR_LRU_LISTS];
+	unsigned long lru_size[NR_LRU_LISTS];
 	struct zone_reclaim_stat reclaim_stat;
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
 	struct zone *zone;

@@ -134,7 +134,6 @@ struct mem_cgroup_reclaim_iter {
  */
 struct mem_cgroup_per_zone {
 	struct lruvec		lruvec;
-	unsigned long		lru_size[NR_LRU_LISTS];
 
 	struct mem_cgroup_reclaim_iter reclaim_iter[DEF_PRIORITY + 1];
 
@@ -722,27 +721,6 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 	preempt_enable();
 }
 
-unsigned long
-mem_cgroup_get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
-{
-	struct mem_cgroup_per_zone *mz;
-
-	mz = container_of(lruvec, struct mem_cgroup_per_zone, lruvec);
-	return mz->lru_size[lru];
-}
-
-void
-mem_cgroup_mod_lruvec_size(struct lruvec *lruvec, enum lru_list lru, int delta)
-{
-	struct mem_cgroup_per_zone *mz;
-
-	if (mem_cgroup_disabled())
-		return;
-
-	mz = container_of(lruvec, struct mem_cgroup_per_zone, lruvec);
-	mz->lru_size[lru] += delta;
-}
-
 static unsigned long
 mem_cgroup_zone_nr_lru_pages(struct mem_cgroup *memcg, int nid, int zid,
 			unsigned int lru_mask)
@@ -755,7 +733,7 @@ mem_cgroup_zone_nr_lru_pages(struct mem_cgroup *memcg, int nid, int zid,
 
 	for_each_lru(lru) {
 		if (BIT(lru) & lru_mask)
-			ret += mz->lru_size[lru];
+			ret += get_lruvec_size(&mz->lruvec, lru);
 	}
 	return ret;
 }
@@ -1199,8 +1177,8 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 	unsigned long active;
 	unsigned long gb;
 
-	inactive = mem_cgroup_get_lruvec_size(lruvec, LRU_INACTIVE_ANON);
-	active = mem_cgroup_get_lruvec_size(lruvec, LRU_ACTIVE_ANON);
+	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_ANON);
+	active = get_lruvec_size(lruvec, LRU_ACTIVE_ANON);
 
 	gb = (inactive + active) >> (30 - PAGE_SHIFT);
 	if (gb)
@@ -1216,8 +1194,8 @@ int mem_cgroup_inactive_file_is_low(struct lruvec *lruvec)
 	unsigned long active;
 	unsigned long inactive;
 
-	inactive = mem_cgroup_get_lruvec_size(lruvec, LRU_INACTIVE_FILE);
-	active = mem_cgroup_get_lruvec_size(lruvec, LRU_ACTIVE_FILE);
+	inactive = get_lruvec_size(lruvec, LRU_INACTIVE_FILE);
+	active = get_lruvec_size(lruvec, LRU_ACTIVE_FILE);
 
 	return (active > inactive);
 }
@@ -3621,7 +3599,7 @@ static int mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
 	mz = mem_cgroup_zoneinfo(memcg, node, zid);
 	list = &mz->lruvec.lists[lru];
 
-	loop = mz->lru_size[lru];
+	loop = get_lruvec_size(&mz->lruvec, lru);
 	/* give some margin against EBUSY etc...*/
 	loop += 256;
 	busy = NULL;

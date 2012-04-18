@@ -21,13 +21,25 @@ static inline int page_is_file_cache(struct page *page)
 	return !PageSwapBacked(page);
 }
 
+static __always_inline unsigned long
+get_lruvec_size(struct lruvec *lruvec, enum lru_list lru)
+{
+	return lruvec->lru_size[lru];
+}
+
+static __always_inline void
+mod_lruvec_size(struct lruvec *lruvec, enum lru_list lru, int delta)
+{
+	lruvec->lru_size[lru] += delta;
+}
+
 static __always_inline void
 add_page_to_lruvec(struct lruvec *lruvec, struct page *page, enum lru_list lru)
 {
 	int numpages = hpage_nr_pages(page);
 
 	list_add(&page->lru, &lruvec->lists[lru]);
-	mem_cgroup_mod_lruvec_size(lruvec, lru, numpages);
+	mod_lruvec_size(lruvec, lru, numpages);
 	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, numpages);
 }
 
@@ -37,7 +49,7 @@ del_page_from_lruvec(struct lruvec *lruvec, struct page *page, enum lru_list lru
 	int numpages = hpage_nr_pages(page);
 
 	list_del(&page->lru);
-	mem_cgroup_mod_lruvec_size(lruvec, lru, -numpages);
+	mod_lruvec_size(lruvec, lru, -numpages);
 	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, -numpages);
 }
 
