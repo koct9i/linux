@@ -100,6 +100,7 @@ extern void prep_compound_page(struct page *page, unsigned long order);
 extern bool is_free_buddy_page(struct page *page);
 #endif
 
+extern void init_zone_lruvec(struct zone *zone, struct lruvec *lruvec);
 
 /*
  * function for dealing with page's order in buddy system.

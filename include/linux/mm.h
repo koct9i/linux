@@ -729,6 +729,26 @@ static inline void set_page_links(struct page *page, enum zone_type zone,
 #endif
 }
 
+#ifdef CONFIG_CGROUP_MEM_RES_CTLR
+
+/* Multiple lruvecs in zone */
+
+static inline struct zone *lruvec_zone(struct lruvec *lruvec)
+{
+	return lruvec->zone;
+}
+
+#else /* CONFIG_CGROUP_MEM_RES_CTLR */
+
+/* Single lruvec in zone */
+
+static inline struct zone *lruvec_zone(struct lruvec *lruvec)
+{
+	return container_of(lruvec, struct zone, lruvec);
+}
+
+#endif /* CONFIG_CGROUP_MEM_RES_CTLR */
+
 /*
  * Some inline functions in vmstat.h depend on page_zone()
  */
