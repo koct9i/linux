@@ -1160,8 +1160,7 @@ putback_inactive_pages(struct lruvec *lruvec,
 		SetPageLRU(page);
 		lru = page_lru(page);
 		lruvec = mem_cgroup_page_lruvec_putback(zone, page);
-		add_page_to_lruvec(lruvec, page, lru);
-		lruvec->recent_rotated[lru] += hpage_nr_pages(page);
+		rotate_page_to_lruvec(lruvec, page, lru);
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
 			__ClearPageActive(page);

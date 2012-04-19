@@ -280,11 +280,6 @@ void rotate_reclaimable_page(struct page *page)
 	}
 }
 
-static void update_page_reclaim_stat(struct lruvec *lruvec, enum lru_list lru)
-{
-	lruvec->recent_rotated[lru]++;
-}
-
 static void __activate_page(struct lruvec *lruvec,
 			    struct page *page, void *arg)
 {
@@ -294,10 +289,8 @@ static void __activate_page(struct lruvec *lruvec,
 		del_page_from_lruvec(lruvec, page, lru);
 		SetPageActive(page);
 		lru += LRU_ACTIVE;
-		add_page_to_lruvec(lruvec, page, lru);
+		rotate_page_to_lruvec(lruvec, page, lru);
 		__count_vm_event(PGACTIVATE);
-
-		update_page_reclaim_stat(lruvec, lru);
 	}
 }
 
@@ -455,7 +448,7 @@ static void lru_deactivate_fn(struct lruvec *lruvec,
 	del_page_from_lruvec(lruvec, page, lru + active);
 	ClearPageActive(page);
 	ClearPageReferenced(page);
-	add_page_to_lruvec(lruvec, page, lru);
+	rotate_page_to_lruvec(lruvec, page, lru);
 
 	if (PageWriteback(page) || PageDirty(page)) {
 		/*
@@ -475,7 +468,6 @@ static void lru_deactivate_fn(struct lruvec *lruvec,
 
 	if (active)
 		__count_vm_event(PGDEACTIVATE);
-	update_page_reclaim_stat(lruvec, lru);
 }
 
 /*
@@ -673,13 +665,13 @@ void lru_add_page_tail(struct lruvec *lruvec,
 		 * Use the standard add function to put page_tail on the list,
 		 * but then correct its position so they all end up in order.
 		 */
-		add_page_to_lruvec(lruvec, page_tail, lru);
+		if (!is_unevictable_lru(lru))
+			rotate_page_to_lruvec(lruvec, page_tail, lru);
+		else
+			add_page_to_lruvec(lruvec, page_tail, lru);
 		list_head = page_tail->lru.prev;
 		list_move_tail(&page_tail->lru, list_head);
 	}
-
-	if (!is_unevictable_lru(lru))
-		update_page_reclaim_stat(lruvec, lru);
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
@@ -696,8 +688,7 @@ static void __pagevec_lru_add_fn(struct lruvec *lruvec,
 	if (is_active_lru(lru))
 		SetPageActive(page);
 
-	add_page_to_lruvec(lruvec, page, lru);
-	update_page_reclaim_stat(lruvec, lru);
+	rotate_page_to_lruvec(lruvec, page, lru);
 }
 
 /*

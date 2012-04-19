@@ -53,6 +53,17 @@ del_page_from_lruvec(struct lruvec *lruvec, struct page *page, enum lru_list lru
 	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, -numpages);
 }
 
+static __always_inline void
+rotate_page_to_lruvec(struct lruvec *lruvec, struct page *page, enum lru_list lru)
+{
+	int numpages = hpage_nr_pages(page);
+
+	list_add(&page->lru, &lruvec->lists[lru]);
+	mod_lruvec_size(lruvec, lru, numpages);
+	lruvec->recent_rotated[lru] += numpages;
+	__mod_zone_page_state(lruvec_zone(lruvec), NR_LRU_BASE + lru, numpages);
+}
+
 /**
  * page_lru_base_type - which LRU list type should a page be on?
  * @page: the page to test
