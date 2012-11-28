@@ -95,7 +95,7 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 		spin_unlock(&f.file->f_lock);
 		break;
 	case POSIX_FADV_SEQUENTIAL:
-		f.file->f_ra.ra_pages = bdi->ra_pages * 2;
+		f.file->f_ra.ra_pages = bdi->ra_pages;
 		spin_lock(&f.file->f_lock);
 		f.file->f_mode &= ~FMODE_RANDOM;
 		spin_unlock(&f.file->f_lock);
