@@ -146,6 +146,7 @@ int vm_swappiness = 60;
  */
 unsigned long vm_total_pages;
 int vm_promote_mapped_pages = 0;
+int sysctl_file_inactive_ratio = 1;
 
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
@@ -1848,7 +1849,7 @@ static int inactive_file_is_low(struct lruvec *lruvec)
 	inactive = get_lru_size(lruvec, LRU_INACTIVE_FILE);
 	active = get_lru_size(lruvec, LRU_ACTIVE_FILE);
 
-	return active > inactive;
+	return (active > inactive * sysctl_file_inactive_ratio);
 }
 
 static int inactive_list_is_low(struct lruvec *lruvec, enum lru_list lru)
