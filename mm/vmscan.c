@@ -145,6 +145,7 @@ int vm_swappiness = 60;
  * zones.
  */
 unsigned long vm_total_pages;
+int vm_promote_mapped_pages = 0;
 
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
@@ -733,6 +734,9 @@ static enum page_references page_check_references(struct page *page,
 		return PAGEREF_RECLAIM;
 
 	if (referenced_ptes) {
+		if (vm_promote_mapped_pages)
+			return PAGEREF_ACTIVATE;
+
 		if (PageSwapBacked(page))
 			return PAGEREF_ACTIVATE;
 		/*
@@ -1683,6 +1687,7 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	unsigned long nr_taken;
 	unsigned long nr_scanned;
 	unsigned long vm_flags;
+	unsigned long rotate_vm_flags = VM_EXEC;
 	LIST_HEAD(l_hold);	/* The pages which were snipped off */
 	LIST_HEAD(l_active);
 	LIST_HEAD(l_inactive);
@@ -1714,6 +1719,9 @@ static void shrink_active_list(unsigned long nr_to_scan,
 	__mod_zone_page_state(zone, NR_ISOLATED_ANON + file, nr_taken);
 	spin_unlock_irq(&zone->lru_lock);
 
+	if (vm_promote_mapped_pages)
+		rotate_vm_flags |= VM_MAYSHARE;
+
 	while (!list_empty(&l_hold)) {
 		cond_resched();
 		page = lru_to_page(&l_hold);
@@ -1744,7 +1752,8 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			 * IO, plus JVM can create lots of anon VM_EXEC pages,
 			 * so we ignore them here.
 			 */
-			if ((vm_flags & VM_EXEC) && page_is_file_cache(page)) {
+			if ((vm_flags & rotate_vm_flags) &&
+			    page_is_file_cache(page)) {
 				list_add(&page->lru, &l_active);
 				continue;
 			}

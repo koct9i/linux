@@ -597,7 +597,8 @@ static void __lru_cache_activate_page(struct page *page)
 void mark_page_accessed(struct page *page)
 {
 	if (!PageActive(page) && !PageUnevictable(page) &&
-			PageReferenced(page)) {
+	    PageReferenced(page) &&
+	    (!vm_promote_mapped_pages || page_mapped(page))) {
 
 		/*
 		 * If the page is on the LRU, queue it for activation via
