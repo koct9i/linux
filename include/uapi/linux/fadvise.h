@@ -18,4 +18,9 @@
 #define POSIX_FADV_NOREUSE	5 /* Data will be accessed once.  */
 #endif
 
+#define POSIX_FADV_NORMAL_READAHEAD	100
+#define POSIX_FADV_NO_READAHEAD	101
+#define POSIX_FADV_LARGE_READAHEAD	102
+#define POSIX_FADV_SMALL_READAHEAD	103
+
 #endif	/* FADVISE_H_INCLUDED */

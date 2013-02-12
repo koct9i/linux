@@ -123,6 +123,9 @@ extern int pagefaults_log_nr_handler(struct ctl_table *table, int write,
 static int hundred_thousands = 100000;
 #endif
 
+extern unsigned int large_readahead_multiplier;
+extern unsigned int small_readahead_divisor;
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -1287,6 +1290,24 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 		.extra2		= &one,
+	},
+	{
+		.procname	= "large_readahead_multiplier",
+		.data		= &large_readahead_multiplier,
+		.maxlen		= sizeof(large_readahead_multiplier),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one,
+		.extra2		= &one_hundred,
+	},
+	{
+		.procname	= "small_readahead_divisor",
+		.data		= &small_readahead_divisor,
+		.maxlen		= sizeof(large_readahead_multiplier),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one,
+		.extra2		= &one_hundred,
 	},
 #ifdef CONFIG_HUGETLB_PAGE
 	{

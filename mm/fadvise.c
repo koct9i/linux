@@ -21,6 +21,9 @@
 
 #include <asm/unistd.h>
 
+unsigned int large_readahead_multiplier = 16;
+unsigned int small_readahead_divisor = 16;
+
 /*
  * POSIX_FADV_WILLNEED could set PG_Referenced, and POSIX_FADV_NOREUSE could
  * deactivate the pages and clear PG_Referenced.
@@ -58,6 +61,10 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 		case POSIX_FADV_WILLNEED:
 		case POSIX_FADV_NOREUSE:
 		case POSIX_FADV_DONTNEED:
+		case POSIX_FADV_NORMAL_READAHEAD:
+		case POSIX_FADV_NO_READAHEAD:
+		case POSIX_FADV_LARGE_READAHEAD:
+		case POSIX_FADV_SMALL_READAHEAD:
 			/* no bad return value, but ignore advice */
 			break;
 		default:
@@ -144,6 +151,26 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 						end_index);
 			}
 		}
+		break;
+	case POSIX_FADV_NORMAL_READAHEAD:
+		spin_lock(&f.file->f_lock);
+		f.file->f_ra.ra_pages = bdi->ra_pages;
+		spin_unlock(&f.file->f_lock);
+		break;
+	case POSIX_FADV_NO_READAHEAD:
+		spin_lock(&f.file->f_lock);
+		f.file->f_ra.ra_pages = 0;
+		spin_unlock(&f.file->f_lock);
+		break;
+	case POSIX_FADV_LARGE_READAHEAD:
+		spin_lock(&f.file->f_lock);
+		f.file->f_ra.ra_pages = bdi->ra_pages * large_readahead_multiplier;
+		spin_unlock(&f.file->f_lock);
+		break;
+	case POSIX_FADV_SMALL_READAHEAD:
+		spin_lock(&f.file->f_lock);
+		f.file->f_ra.ra_pages = bdi->ra_pages / small_readahead_divisor;
+		spin_unlock(&f.file->f_lock);
 		break;
 	default:
 		ret = -EINVAL;
