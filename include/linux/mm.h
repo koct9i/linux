@@ -2087,6 +2087,8 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 extern int randomize_va_space;
 #endif
 
+extern int vm_miss_based_ra;
+
 const char * arch_vma_name(struct vm_area_struct *vma);
 void print_vma_addr(char *prefix, unsigned long rip);
 

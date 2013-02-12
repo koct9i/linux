@@ -109,6 +109,8 @@
  *   ->tasklist_lock            (memory_failure, collect_procs_ao)
  */
 
+int vm_miss_based_ra = 1;
+
 static void page_cache_tree_delete(struct address_space *mapping,
 				   struct page *page, void *shadow)
 {
@@ -1800,16 +1802,18 @@ static void do_sync_mmap_readahead(struct vm_area_struct *vma,
 		return;
 	}
 
-	/* Avoid banging the cache line if not needed */
-	if (ra->mmap_miss < MMAP_LOTSAMISS * 10)
-		ra->mmap_miss++;
+	if (vm_miss_based_ra) {
+		/* Avoid banging the cache line if not needed */
+		if (ra->mmap_miss < MMAP_LOTSAMISS * 10)
+			ra->mmap_miss++;
 
-	/*
-	 * Do we miss much more than hit in this file? If so,
-	 * stop bothering with read-ahead. It will only hurt.
-	 */
-	if (ra->mmap_miss > MMAP_LOTSAMISS)
-		return;
+		/*
+		 * Do we miss much more than hit in this file? If so,
+		 * stop bothering with read-ahead. It will only hurt.
+		 */
+		if (ra->mmap_miss > MMAP_LOTSAMISS)
+			return;
+	}
 
 	/*
 	 * mmap read-around
@@ -1836,7 +1840,7 @@ static void do_async_mmap_readahead(struct vm_area_struct *vma,
 	/* If we don't want any read-ahead, don't bother */
 	if (vma->vm_flags & VM_RAND_READ)
 		return;
-	if (ra->mmap_miss > 0)
+	if (vm_miss_based_ra && ra->mmap_miss > 0)
 		ra->mmap_miss--;
 	if (PageReadahead(page))
 		page_cache_async_readahead(mapping, ra, file,
