@@ -94,6 +94,10 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 		spin_unlock(&f.file->f_lock);
 		break;
 	case POSIX_FADV_WILLNEED:
+		spin_lock(&f.file->f_lock);
+		f.file->f_mode &= ~FMODE_NOREUSE;
+		spin_unlock(&f.file->f_lock);
+
 		/* First and last PARTIAL page! */
 		start_index = offset >> PAGE_CACHE_SHIFT;
 		end_index = endbyte >> PAGE_CACHE_SHIFT;
@@ -111,6 +115,9 @@ SYSCALL_DEFINE4(fadvise64_64, int, fd, loff_t, offset, loff_t, len, int, advice)
 					   nrpages);
 		break;
 	case POSIX_FADV_NOREUSE:
+		spin_lock(&f.file->f_lock);
+		f.file->f_mode |= FMODE_NOREUSE;
+		spin_unlock(&f.file->f_lock);
 		break;
 	case POSIX_FADV_DONTNEED:
 		if (!bdi_write_congested(mapping->backing_dev_info))

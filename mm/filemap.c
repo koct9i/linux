@@ -1560,7 +1560,8 @@ page_ok:
 		 * When a sequential read accesses a page several times,
 		 * only mark it as accessed the first time.
 		 */
-		if (prev_index != index || offset != prev_offset)
+		if ((prev_index != index || offset != prev_offset) &&
+		    !(filp->f_mode & FMODE_NOREUSE))
 			mark_page_accessed(page);
 		prev_index = index;
 
@@ -1570,6 +1571,32 @@ page_ok:
 		 */
 
 		ret = copy_page_to_iter(page, offset, nr, iter);
+
+		/*
+		 * Flush pagevecs if the page is not in a LRU list to have
+		 * an ability to evict the page just after copying data to
+		 * userspace.
+		 */
+		if (unlikely(filp->f_mode & FMODE_NOREUSE && !PageLRU(page)))
+			lru_add_drain();
+
+		/*
+		 * If POSIX_FADV_NOREUSE is set, it's expected, that there will
+		 * be no second access to the data. So, try to evict pages just
+		 * after copying data to userspace.
+		 */
+		if (filp->f_mode & FMODE_NOREUSE &&
+		    !page_mapped(page) &&
+		    (nr + offset == PAGE_CACHE_SIZE) &&
+		    !PageActive(page) &&
+		    !PageUnevictable(page) &&
+		    !page_has_private(page) &&
+		    PageLRU(page) &&
+		    trylock_page(page)) {
+			remove_mapping(mapping, page);
+			unlock_page(page);
+		}
+
 		offset += ret;
 		index += offset >> PAGE_CACHE_SHIFT;
 		offset &= ~PAGE_CACHE_MASK;
