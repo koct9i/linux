@@ -1791,6 +1791,69 @@ static void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask,
 			 NULL, "Memory cgroup out of memory");
 }
 
+/*
+ * If a cgroup is under low limit or enough close to it,
+ * decrease speed of page scanning.
+ *
+ * mem_cgroup_low_limit_scale() returns a number
+ * from range [0, DEF_PRIORITY - 2], which is used
+ * in the reclaim code as a scanning priority modifier.
+ *
+ * If the low limit is not set, it returns 0;
+ *
+ * usage - low_limit > usage / 8  => 0
+ * usage - low_limit > usage / 16 => 1
+ * usage - low_limit > usage / 32 => 2
+ * ...
+ * usage - low_limit > usage / (2 ^ DEF_PRIORITY - 3) => DEF_PRIORITY - 3
+ * usage < low_limit => DEF_PRIORITY - 2
+ *
+ */
+unsigned int mem_cgroup_low_limit_scale(struct mem_cgroup *memcg,
+					unsigned int parent_scale)
+{
+	struct cgroup *cgrp = memcg->css.cgroup;
+	unsigned long long low_limit;
+	unsigned long long usage;
+	unsigned int scale = 0;
+
+	low_limit = res_counter_read_u64(&memcg->res, RES_LOW_LIMIT);
+	if (!low_limit)
+		goto out;
+
+	usage = res_counter_read_u64(&memcg->res, RES_USAGE);
+
+	scale = DEF_PRIORITY - 2;
+	if (usage < low_limit)
+		goto out;
+
+	for (scale = 0; scale < DEF_PRIORITY - 2; scale++)
+		if (usage - low_limit > (usage >> (scale + 3)))
+			break;
+
+out:
+	if (memcg->use_hierarchy && scale < parent_scale) {
+		/*
+		 * If parent cgroup is under their's low limit,
+		 * and we don't, take parent's scale.
+		 */
+		scale = parent_scale;
+	}
+
+	if (scale > 0 && !cgroup_has_tasks(cgrp)) {
+		/*
+		 * Do not protect memory in abandoned cgroups.
+		 */
+		if (memcg->use_hierarchy && cgrp->populated_cnt)
+			goto out2;
+
+		scale = 0;
+	}
+
+out2:
+	return scale;
+}
+
 /**
  * test_mem_cgroup_node_reclaimable
  * @memcg: the target memcg
@@ -4244,6 +4307,20 @@ static ssize_t mem_cgroup_write(struct kernfs_open_file *of,
 		else
 			ret = -EINVAL;
 		break;
+	case RES_LOW_LIMIT:
+		ret = res_counter_memparse_write_strategy(buf, &val);
+		if (ret)
+			break;
+		/*
+		 * For memsw, low limits (as also soft limits, see upper)
+		 * are hard to implement in terms of semantics,
+		 * for now, we support soft limits for control without swap
+		 */
+		if (type == _MEM)
+			ret = res_counter_set_low_limit(&memcg->res, val);
+		else
+			ret = -EINVAL;
+		break;
 	default:
 		ret = -EINVAL; /* should be BUG() ? */
 		break;
@@ -5163,6 +5240,12 @@ static struct cftype mem_cgroup_files[] = {
 	{
 		.name = "soft_limit_in_bytes",
 		.private = MEMFILE_PRIVATE(_MEM, RES_SOFT_LIMIT),
+		.write = mem_cgroup_write,
+		.read_u64 = mem_cgroup_read_u64,
+	},
+	{
+		.name = "low_limit_in_bytes",
+		.private = MEMFILE_PRIVATE(_MEM, RES_LOW_LIMIT),
 		.write = mem_cgroup_write,
 		.read_u64 = mem_cgroup_read_u64,
 	},

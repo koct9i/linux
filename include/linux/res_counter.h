@@ -40,6 +40,10 @@ struct res_counter {
 	 */
 	unsigned long long soft_limit;
 	/*
+	 * the secured guaranteed minimal limit of resource
+	 */
+	unsigned long long low_limit;
+	/*
 	 * the number of unsuccessful attempts to consume the resource
 	 */
 	unsigned long long failcnt;
@@ -88,6 +92,7 @@ enum {
 	RES_LIMIT,
 	RES_FAILCNT,
 	RES_SOFT_LIMIT,
+	RES_LOW_LIMIT,
 };
 
 /*
@@ -216,6 +221,18 @@ res_counter_set_soft_limit(struct res_counter *cnt,
 
 	spin_lock_irqsave(&cnt->lock, flags);
 	cnt->soft_limit = soft_limit;
+	spin_unlock_irqrestore(&cnt->lock, flags);
+	return 0;
+}
+
+static inline int
+res_counter_set_low_limit(struct res_counter *cnt,
+			   unsigned long long low_limit)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&cnt->lock, flags);
+	cnt->low_limit = low_limit;
 	spin_unlock_irqrestore(&cnt->lock, flags);
 	return 0;
 }

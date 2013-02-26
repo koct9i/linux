@@ -74,6 +74,9 @@ struct scan_control {
 	 */
 	nodemask_t	*nodemask;
 
+	/* If memcg is under it's low limit, do not scan it aggressively */
+	unsigned int low_limit_scale;
+
 	/*
 	 * The memory cgroup that hit its limit and as a result is the
 	 * primary target of this reclaim invocation.
@@ -2055,6 +2058,10 @@ out:
 				/* Look ma, no brain */
 				BUG();
 			}
+
+			if (sc->low_limit_scale)
+				scan >>= sc->low_limit_scale;
+
 			nr[lru] = scan;
 			/*
 			 * Skip the second pass and don't force_scan,
@@ -2282,6 +2289,8 @@ static bool shrink_zone(struct zone *zone, struct scan_control *sc)
 			lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 			swappiness = mem_cgroup_swappiness(memcg);
 
+			sc->low_limit_scale = mem_cgroup_low_limit_scale(memcg,
+							sc->low_limit_scale);
 			shrink_lruvec(lruvec, swappiness, sc);
 
 			/*
@@ -2732,6 +2741,7 @@ unsigned long mem_cgroup_shrink_node_zone(struct mem_cgroup *memcg,
 		.may_writepage = !laptop_mode,
 		.may_unmap = 1,
 		.may_swap = !noswap,
+		.low_limit_scale = 0,
 	};
 	struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
 	int swappiness = mem_cgroup_swappiness(memcg);

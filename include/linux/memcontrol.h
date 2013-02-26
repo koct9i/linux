@@ -179,6 +179,9 @@ void mem_cgroup_split_huge_fixup(struct page *head);
 bool mem_cgroup_bad_page_check(struct page *page);
 void mem_cgroup_print_bad_page(struct page *page);
 #endif
+
+unsigned int mem_cgroup_low_limit_scale(struct mem_cgroup *memcg,
+					unsigned int parent_scale);
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
 
@@ -350,6 +353,12 @@ static inline void mem_cgroup_split_huge_fixup(struct page *head)
 static inline
 void mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
 {
+}
+
+static inline unsigned int mem_cgroup_low_limit_scale(struct mem_cgroup *memcg,
+						      unsigned int parent_scale)
+{
+	return 0;
 }
 #endif /* CONFIG_MEMCG */
 
