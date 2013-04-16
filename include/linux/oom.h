@@ -94,6 +94,7 @@ extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
+extern int sysctl_oom_verbose;
 extern int sysctl_oom_kill_allocating_task;
 extern int sysctl_panic_on_oom;
 #endif /* _INCLUDE_LINUX_OOM_H */

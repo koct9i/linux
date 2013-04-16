@@ -42,6 +42,7 @@
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks = 1;
+int sysctl_oom_verbose = 1;
 static DEFINE_SPINLOCK(zone_scan_lock);
 
 #ifdef CONFIG_NUMA
@@ -449,7 +450,7 @@ void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 		return;
 	}
 
-	if (__ratelimit(&oom_rs))
+	if (sysctl_oom_verbose && __ratelimit(&oom_rs))
 		dump_header(p, gfp_mask, order, memcg, nodemask);
 
 	task_lock(p);
