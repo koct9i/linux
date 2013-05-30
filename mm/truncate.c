@@ -105,6 +105,10 @@ truncate_complete_page(struct address_space *mapping, struct page *page)
 	if (page_has_private(page))
 		do_invalidatepage(page, 0);
 
+	/*
+	 * This is final dirty accounting check. Some filesystems may
+	 * re-dirty pages during invalidation, hence it placed after that.
+	 */
 	cancel_dirty_page(page, PAGE_CACHE_SIZE);
 
 	ClearPageMappedToDisk(page);
