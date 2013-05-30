@@ -314,7 +314,7 @@ static inline void SetPageUptodate(struct page *page)
 
 CLEARPAGEFLAG(Uptodate, uptodate)
 
-extern void cancel_dirty_page(struct page *page, unsigned int account_size);
+extern void cancel_dirty_page(struct page *page);
 
 int test_clear_page_writeback(struct page *page);
 int test_set_page_writeback(struct page *page);

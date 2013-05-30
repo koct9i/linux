@@ -71,7 +71,7 @@ static inline void truncate_partial_page(struct page *page, unsigned partial)
  * out all the buffers on a page without actually doing it through
  * the VM. Can you say "ext3 is horribly ugly"? Tought you could.
  */
-void cancel_dirty_page(struct page *page, unsigned int account_size)
+void cancel_dirty_page(struct page *page)
 {
 	if (TestClearPageDirty(page)) {
 		struct address_space *mapping = page->mapping;
@@ -79,8 +79,7 @@ void cancel_dirty_page(struct page *page, unsigned int account_size)
 			dec_zone_page_state(page, NR_FILE_DIRTY);
 			dec_bdi_stat(mapping->backing_dev_info,
 					BDI_RECLAIMABLE);
-			if (account_size)
-				task_io_account_cancelled_write(account_size);
+			task_io_account_cancelled_write(PAGE_CACHE_SIZE);
 		}
 	}
 }
@@ -109,7 +108,7 @@ truncate_complete_page(struct address_space *mapping, struct page *page)
 	 * This is final dirty accounting check. Some filesystems may
 	 * re-dirty pages during invalidation, hence it placed after that.
 	 */
-	cancel_dirty_page(page, PAGE_CACHE_SIZE);
+	cancel_dirty_page(page);
 
 	ClearPageMappedToDisk(page);
 	delete_from_page_cache(page);
