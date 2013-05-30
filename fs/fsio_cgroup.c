@@ -12,6 +12,7 @@ static void fsio_free(struct fsio_cgroup *fsio)
 	percpu_counter_destroy(&fsio->write_bytes);
 	percpu_counter_destroy(&fsio->nr_dirty);
 	percpu_counter_destroy(&fsio->nr_writeback);
+	percpu_ratelimit_destroy(&fsio->bandwidth_bytes);
 	kfree(fsio);
 }
 
@@ -26,7 +27,8 @@ static struct cgroup_subsys_state *fsio_css_alloc(struct cgroup *cgroup)
 	if (percpu_counter_init(&fsio->read_bytes, 0) ||
 	    percpu_counter_init(&fsio->write_bytes, 0) ||
 	    percpu_counter_init(&fsio->nr_dirty, 0) ||
-	    percpu_counter_init(&fsio->nr_writeback, 0)) {
+	    percpu_counter_init(&fsio->nr_writeback, 0) || 
+	    percpu_ratelimit_init(&fsio->bandwidth_bytes, ULLONG_MAX)) {
 		fsio_free(fsio);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -38,7 +40,7 @@ static struct cgroup_subsys_state *fsio_css_alloc(struct cgroup *cgroup)
  * Yep, ugly. As alternative we can switch fsio_writeback for all inodes in all
  * superblocks to the root cgroup and commit remaineded page counters into it.
  */
-static void fsio_destroy(struct work_queue *work)
+static void fsio_destroy(struct work_struct *work)
 {
 	struct fsio_cgroup *fsio = container_of(work,
 			struct fsio_cgroup, destroy.work);
@@ -87,6 +89,23 @@ static u64 fsio_get_writeback_bytes(struct cgroup *cgroup, struct cftype *cft)
 		PAGE_CACHE_SIZE;
 }
 
+static u64 fsio_get_bandwidth_bytes(struct cgroup *cgroup, struct cftype *cft)
+{
+	struct fsio_cgroup *fsio = cgroup_fsio(cgroup);
+
+	return fsio->bandwidth_bytes.quota *
+		(NSEC_PER_SEC / ktime_to_ns(fsio->bandwidth_bytes.interval));
+}
+
+static int fsio_set_bandwidth_bytes(struct cgroup *cgroup,
+						struct cftype *cft, u64 val)
+{
+	struct fsio_cgroup *fsio = cgroup_fsio(cgroup);
+
+	percpu_ratelimit_setup(&fsio->bandwidth_bytes, val);
+	return 0;
+}
+
 static struct cftype fsio_files[] = {
 	{
 		.name = "read_bytes",
@@ -103,6 +122,11 @@ static struct cftype fsio_files[] = {
 	{
 		.name = "writeback_bytes",
 		.read_u64 = fsio_get_writeback_bytes,
+	},
+	{
+		.name = "bandwidth_bytes",
+		.read_u64 = fsio_get_bandwidth_bytes,
+		.write_u64 = fsio_set_bandwidth_bytes,
 	},
 	{ }	/* terminate */
 };

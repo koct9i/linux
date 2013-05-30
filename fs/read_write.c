@@ -17,6 +17,7 @@
 #include <linux/pagemap.h>
 #include <linux/splice.h>
 #include <linux/compat.h>
+#include <linux/fsio_cgroup.h>
 #include "internal.h"
 
 #include <asm/uaccess.h>
@@ -373,6 +374,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 			add_rchar(current, ret);
 		}
 		inc_syscr(current);
+		fsio_account_read_syscall();
 	}
 
 	return ret;
@@ -424,6 +426,7 @@ ssize_t __kernel_write(struct file *file, const char *buf, size_t count, loff_t 
 		add_wchar(current, ret);
 	}
 	inc_syscw(current);
+	fsio_account_write_syscall();
 	return ret;
 }
 
@@ -452,6 +455,7 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 		}
 		inc_syscw(current);
 		file_end_write(file);
+		fsio_account_write_syscall();
 	}
 
 	return ret;
@@ -787,6 +791,7 @@ SYSCALL_DEFINE3(readv, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_rchar(current, ret);
 	inc_syscr(current);
+	fsio_account_read_syscall();
 	return ret;
 }
 
@@ -806,6 +811,7 @@ SYSCALL_DEFINE3(writev, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_wchar(current, ret);
 	inc_syscw(current);
+	fsio_account_write_syscall();
 	return ret;
 }
 
@@ -836,6 +842,7 @@ SYSCALL_DEFINE5(preadv, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_rchar(current, ret);
 	inc_syscr(current);
+	fsio_account_read_syscall();
 	return ret;
 }
 
@@ -860,6 +867,7 @@ SYSCALL_DEFINE5(pwritev, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_wchar(current, ret);
 	inc_syscw(current);
+	fsio_account_write_syscall();
 	return ret;
 }
 
@@ -944,6 +952,7 @@ out:
 	if (ret > 0)
 		add_rchar(current, ret);
 	inc_syscr(current);
+	fsio_account_read_syscall();
 	return ret;
 }
 
@@ -1010,6 +1019,7 @@ out:
 	if (ret > 0)
 		add_wchar(current, ret);
 	inc_syscw(current);
+	fsio_account_write_syscall();
 	return ret;
 }
 
@@ -1137,6 +1147,8 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 
 	inc_syscr(current);
 	inc_syscw(current);
+	fsio_account_read_syscall();
+	fsio_account_write_syscall();
 	if (*ppos > max)
 		retval = -EOVERFLOW;
 

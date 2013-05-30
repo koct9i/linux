@@ -6,6 +6,7 @@
 #include <linux/cgroup.h>
 #include <linux/workqueue.h>
 #include <linux/percpu_counter.h>
+#include <linux/ratelimit.h>
 
 struct fsio_cgroup {
 	union {
@@ -16,6 +17,7 @@ struct fsio_cgroup {
 	struct percpu_counter write_bytes;
 	struct percpu_counter nr_dirty;
 	struct percpu_counter nr_writeback;
+	struct percpu_ratelimit bandwidth_bytes;
 };
 
 #ifdef CONFIG_FSIO_CGROUP
@@ -40,6 +42,7 @@ static inline void fsio_account_read(unsigned long bytes)
 	fsio = current_fsio_cgroup();
 	__percpu_counter_add(&fsio->read_bytes, bytes,
 			PAGE_CACHE_SIZE * percpu_counter_batch);
+	percpu_ratelimit_charge(&fsio->bandwidth_bytes, bytes);
 	rcu_read_unlock();
 }
 
@@ -54,6 +57,29 @@ static inline void fsio_account_write(unsigned long bytes)
 	fsio = current_fsio_cgroup();
 	__percpu_counter_add(&fsio->write_bytes, bytes,
 			PAGE_CACHE_SIZE * percpu_counter_batch);
+	percpu_ratelimit_charge(&fsio->bandwidth_bytes, bytes);
+	rcu_read_unlock();
+}
+
+static inline void fsio_account_read_syscall(void)
+{
+	struct fsio_cgroup *fsio;
+
+	rcu_read_lock();
+	fsio = current_fsio_cgroup();
+	if (fsio->bandwidth_bytes.target_time.tv64 > ktime_get().tv64)
+		delay_injection_target(fsio->bandwidth_bytes.target_time);
+	rcu_read_unlock();
+}
+
+static inline void fsio_account_write_syscall(void)
+{
+	struct fsio_cgroup *fsio;
+
+	rcu_read_lock();
+	fsio = current_fsio_cgroup();
+	if (fsio->bandwidth_bytes.target_time.tv64 > ktime_get().tv64)
+		delay_injection_target(fsio->bandwidth_bytes.target_time);
 	rcu_read_unlock();
 }
 
@@ -135,6 +161,8 @@ static inline void fsio_clear_page_writeback(struct address_space *mapping)
 
 static inline void fsio_account_read(unsigned long bytes) {}
 static inline void fsio_account_write(unsigned long bytes) {}
+static inline void fsio_account_read_syscall(void) {}
+static inline void fsio_account_write_syscall(void) {}
 static inline void fsio_account_page_dirtied(struct address_space *mapping) {}
 static inline void fsio_cancel_dirty_page(struct address_space *mapping) {}
 static inline void fsio_account_page_redirty(struct address_space *mapping) {}
