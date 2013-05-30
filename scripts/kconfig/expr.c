@@ -1087,9 +1087,15 @@ void expr_print(struct expr *e, void (*fn)(void *, struct symbol *, const char *
 		fn(data, e->right.sym, e->right.sym->name);
 		break;
 	case E_OR:
-		expr_print(e->left.expr, fn, data, E_OR);
-		fn(data, NULL, " || ");
-		expr_print(e->right.expr, fn, data, E_OR);
+		if (prevtoken == E_NONE) {
+			expr_print(e->left.expr, fn, data, E_NONE);
+			fn(data, NULL, "\n|| ");
+			expr_print(e->right.expr, fn, data, E_NONE);
+		} else {
+			expr_print(e->left.expr, fn, data, E_OR);
+			fn(data, NULL, " || ");
+			expr_print(e->right.expr, fn, data, E_OR);
+		}
 		break;
 	case E_AND:
 		expr_print(e->left.expr, fn, data, E_AND);
