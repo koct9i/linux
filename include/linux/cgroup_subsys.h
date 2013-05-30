@@ -84,3 +84,9 @@ SUBSYS(bcache)
 #endif
 
 /* */
+
+#if IS_SUBSYS_ENABLED(CONFIG_FSIO_CGROUP)
+SUBSYS(fsio)
+#endif
+
+/* */

@@ -17,6 +17,7 @@
 #include <linux/highmem.h>
 #include <linux/pagevec.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/buffer_head.h>	/* grr. try_to_release_page,
 				   do_invalidatepage */
 #include <linux/cleancache.h>
@@ -80,6 +81,7 @@ void cancel_dirty_page(struct page *page)
 			dec_bdi_stat(mapping->backing_dev_info,
 					BDI_RECLAIMABLE);
 			task_io_account_cancelled_write(PAGE_CACHE_SIZE);
+			fsio_cancel_dirty_page(mapping);
 		}
 	}
 }

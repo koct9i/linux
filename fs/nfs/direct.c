@@ -46,6 +46,7 @@
 #include <linux/kref.h>
 #include <linux/slab.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/module.h>
 
 #include <linux/nfs_fs.h>
@@ -987,6 +988,7 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, const struct iovec *iov,
 		goto out;
 
 	task_io_account_write(count);
+	fsio_account_write(count);
 
 	retval = nfs_direct_write(iocb, iov, nr_segs, pos, count, uio);
 	if (retval > 0) {

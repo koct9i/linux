@@ -23,6 +23,7 @@
 #include <linux/init.h>
 #include <linux/backing-dev.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/blkdev.h>
 #include <linux/mpage.h>
 #include <linux/rmap.h>
@@ -1994,6 +1995,7 @@ void account_page_dirtied(struct page *page, struct address_space *mapping)
 		__inc_bdi_stat(mapping->backing_dev_info, BDI_RECLAIMABLE);
 		__inc_bdi_stat(mapping->backing_dev_info, BDI_DIRTIED);
 		task_io_account_write(PAGE_CACHE_SIZE);
+		fsio_account_page_dirtied(mapping);
 		current->nr_dirtied++;
 		this_cpu_inc(bdp_ratelimits);
 	}
@@ -2071,6 +2073,7 @@ void account_page_redirty(struct page *page)
 		current->nr_dirtied--;
 		dec_zone_page_state(page, NR_DIRTIED);
 		dec_bdi_stat(mapping->backing_dev_info, BDI_DIRTIED);
+		fsio_account_page_redirty(mapping);
 	}
 }
 EXPORT_SYMBOL(account_page_redirty);
@@ -2242,6 +2245,7 @@ int test_clear_page_writeback(struct page *page)
 			if (bdi_cap_account_writeback(bdi)) {
 				__dec_bdi_stat(bdi, BDI_WRITEBACK);
 				__bdi_writeout_inc(bdi);
+				fsio_clear_page_writeback(mapping);
 			}
 		}
 		spin_unlock_irqrestore(&mapping->tree_lock, flags);
@@ -2270,8 +2274,10 @@ int test_set_page_writeback(struct page *page)
 			radix_tree_tag_set(&mapping->page_tree,
 						page_index(page),
 						PAGECACHE_TAG_WRITEBACK);
-			if (bdi_cap_account_writeback(bdi))
+			if (bdi_cap_account_writeback(bdi)) {
 				__inc_bdi_stat(bdi, BDI_WRITEBACK);
+				fsio_set_page_writeback(mapping);
+			}
 		}
 		if (!PageDirty(page))
 			radix_tree_tag_clear(&mapping->page_tree,
