@@ -3,6 +3,7 @@
 
 #include <linux/param.h>
 #include <linux/spinlock.h>
+#include <linux/ktime.h>
 
 #define DEFAULT_RATELIMIT_INTERVAL	(5 * HZ)
 #define DEFAULT_RATELIMIT_BURST		10
@@ -71,5 +72,23 @@ extern int ___ratelimit(struct ratelimit_state *rs, const char *func);
 })
 
 #endif
+
+struct percpu_ratelimit {
+	ktime_t		target_time;	/* time of nearest possible event */
+	ktime_t		deadline;	/* inteval to utilize past quota */
+	ktime_t		interval;	/* time between quota assignations */
+	u64		quota;		/* amount of events per interval */
+	u64		cur_balance;	/* amount of available events */
+	raw_spinlock_t	lock;		/* protect the state */
+	u32		cpu_precharge;	/* events in per-cpu precharge */
+	u32 __percpu	*cpu_balance;	/* per-cpu precharge */
+};
+
+int percpu_ratelimit_init(struct percpu_ratelimit *rl, u64 events_per_sec);
+void percpu_ratelimit_destroy(struct percpu_ratelimit *rl);
+void percpu_ratelimit_setup(struct percpu_ratelimit *rl, u64 events_per_sec);
+void percpu_ratelimit_charge(struct percpu_ratelimit *rl, u64 events);
+bool percpu_ratelimit_try_charge(struct percpu_ratelimit *rl, u64 events);
+int percpu_ratelimit_timeout(struct percpu_ratelimit *rl);
 
 #endif /* _LINUX_RATELIMIT_H */
