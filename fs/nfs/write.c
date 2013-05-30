@@ -1735,11 +1735,6 @@ int nfs_wb_page_cancel(struct inode *inode, struct page *page)
 		if (nfs_lock_request(req)) {
 			nfs_clear_request_commit(req);
 			nfs_inode_remove_request(req);
-			/*
-			 * In case nfs_inode_remove_request has marked the
-			 * page as being dirty
-			 */
-			cancel_dirty_page(page, PAGE_CACHE_SIZE);
 			nfs_unlock_and_release_request(req);
 			break;
 		}
