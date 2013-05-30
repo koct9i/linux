@@ -1357,6 +1357,10 @@ struct task_struct {
 #ifdef CONFIG_FAULT_INJECTION
 	int make_it_fail;
 #endif
+#ifdef CONFIG_DELAY_INJECTION
+	ktime_t delay_injection_target;
+	struct callback_head delay_injection_work;
+#endif
 	/*
 	 * when (nr_dirtied >= nr_dirtied_pause), it's time to call
 	 * balance_dirty_pages() for some dirty throttling pause
@@ -1912,6 +1916,8 @@ extern struct task_struct *curr_task(int cpu);
 extern void set_curr_task(int cpu, struct task_struct *p);
 
 void yield(void);
+
+extern void delay_injection_target(ktime_t time);
 
 /*
  * The default (Linux) execution domain.
