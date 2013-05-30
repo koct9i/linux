@@ -1102,6 +1102,11 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 		page = lru_to_page(src);
 		prefetchw_prev_lru_page(page, src, flags);
 
+		if (is_lru_milestone(lruvec, &page->lru)) {
+			remove_lru_milestone(lruvec, lru);
+			continue;
+		}
+
 		VM_BUG_ON(!PageLRU(page));
 
 		switch (__isolate_lru_page(page, mode)) {
@@ -2497,6 +2502,113 @@ static void age_active_anon(struct zone *zone, struct scan_control *sc)
 	} while (memcg);
 }
 
+void remove_lru_milestone(struct lruvec *lruvec, enum lru_list lru)
+{
+	struct zone *zone = lruvec_zone(lruvec);
+	unsigned long now = jiffies, interval, next;
+	struct lru_milestone *ms;
+
+	ms = container_of(lruvec->lists[lru].prev, struct lru_milestone, lru);
+	list_del_init(&ms->lru);
+	lruvec->age[lru] = now - ms->timestamp;
+
+	pr_debug("lruvec:%p lru:%d remove:%02ld age:%lu\n", lruvec, lru,
+			ms - lruvec->milestones[lru], lruvec->age[lru]);
+
+	/* get new estimation for next milestone */
+	interval = lruvec->age[lru] / NR_LRU_MILESTONES;
+	ms = lruvec->milestones[lru] + lruvec->last_milestone[lru];
+	next = ms->timestamp + interval;
+	lruvec->next_timestamp[lru] = next;
+
+	if (time_before(next, zone->milestones_work.timer.expires))
+		mod_delayed_work(system_wq, &zone->milestones_work,
+				 time_after(next, now) ? (next - now) : 0);
+}
+
+static void insert_lru_milestone(struct lruvec *lruvec, enum lru_list lru)
+{
+	unsigned long now = jiffies, interval;
+	struct lru_milestone *ms;
+
+	lruvec->last_milestone[lru]++;
+	lruvec->last_milestone[lru] %= NR_LRU_MILESTONES;
+	ms = lruvec->milestones[lru] + lruvec->last_milestone[lru];
+
+	/* get linear estimation of perfect interval between milestones */
+	interval = lruvec->age[lru] / NR_LRU_MILESTONES;
+
+	if (!list_empty(&ms->lru)) {
+		list_del(&ms->lru);
+		lruvec->age[lru] = now - ms->timestamp;
+		/* double inteval if oldest milestone is still in lru */
+		interval += HZ/100 + lruvec->age[lru] / NR_LRU_MILESTONES;
+	}
+
+	/* Required for calculating average ages in u64 without overflows */
+	interval = min_t(unsigned long, interval, INT_MAX / NR_LRU_MILESTONES);
+
+	ms->timestamp = now;
+	list_add(&ms->lru, &lruvec->lists[lru]);
+	lruvec->next_timestamp[lru] = now + interval;
+
+	pr_debug("lruvec:%p lru:%d insert:%02ld age:%lu\n", lruvec, lru,
+			ms - lruvec->milestones[lru], lruvec->age[lru]);
+}
+
+static void lru_milestones_work(struct work_struct *work)
+{
+	unsigned long size[NR_EVICTABLE_LRU_LISTS] = {0,};
+	u64 age[NR_EVICTABLE_LRU_LISTS] = {0,};
+	struct mem_cgroup *memcg;
+	unsigned long next;
+	struct zone *zone;
+	enum lru_list lru;
+
+	zone = container_of(work, struct zone, milestones_work.work);
+	if (!populated_zone(zone) || !node_state(zone_to_nid(zone), N_MEMORY))
+		return;
+
+	next = jiffies + INT_MAX / NR_LRU_MILESTONES;
+	zone->milestones_work.timer.expires = next;
+
+	memcg = mem_cgroup_iter(NULL, NULL, NULL);
+	do {
+		struct lruvec *lruvec = mem_cgroup_zone_lruvec(zone, memcg);
+		unsigned long now = jiffies;
+		unsigned long pages;
+
+		for_each_evictable_lru(lru) {
+			if (time_after_eq(now, lruvec->next_timestamp[lru])) {
+				spin_lock_irq(&zone->lru_lock);
+				insert_lru_milestone(lruvec, lru);
+				spin_unlock_irq(&zone->lru_lock);
+			}
+			if (time_before(lruvec->next_timestamp[lru], next))
+				next = lruvec->next_timestamp[lru];
+
+			pages = get_lru_size(lruvec, lru);
+			size[lru] += pages;
+			age[lru] += (u64)pages * lruvec->age[lru];
+		}
+
+		memcg = mem_cgroup_iter(NULL, memcg, NULL);
+	} while (memcg);
+
+	for_each_evictable_lru(lru) {
+		if (size[lru])
+			do_div(age[lru], size[lru]);
+		zone->average_age[lru] = age[lru];
+	}
+
+	if (time_before_eq(next, zone->milestones_work.timer.expires)) {
+		unsigned long now = jiffies;
+
+		mod_delayed_work(system_wq, &zone->milestones_work,
+				 time_after(next, now) ? (next - now) : 0);
+	}
+}
+
 static bool zone_balanced(struct zone *zone, int order,
 			  unsigned long balance_gap, int classzone_idx)
 {
@@ -2962,6 +3074,7 @@ static int kswapd(void *p)
 	int balanced_classzone_idx;
 	pg_data_t *pgdat = (pg_data_t*)p;
 	struct task_struct *tsk = current;
+	int i;
 
 	struct reclaim_state reclaim_state = {
 		.reclaimed_slab = 0,
@@ -2988,6 +3101,13 @@ static int kswapd(void *p)
 	 */
 	tsk->flags |= PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD;
 	set_freezable();
+
+	for (i = pgdat->nr_zones - 1; i >= 0; i--) {
+		struct zone *zone = pgdat->node_zones + i;
+
+		INIT_DELAYED_WORK(&zone->milestones_work, lru_milestones_work);
+		schedule_delayed_work(&zone->milestones_work, 0);
+	}
 
 	order = new_order = 0;
 	balanced_order = 0;
@@ -3041,6 +3161,12 @@ static int kswapd(void *p)
 			balanced_order = balance_pgdat(pgdat, order,
 						&balanced_classzone_idx);
 		}
+	}
+
+	for (i = pgdat->nr_zones - 1; i >= 0; i--) {
+		struct zone *zone = pgdat->node_zones + i;
+
+		cancel_delayed_work_sync(&zone->milestones_work);
 	}
 
 	current->reclaim_state = NULL;

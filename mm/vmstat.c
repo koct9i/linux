@@ -1055,6 +1055,15 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 		   zone->all_unreclaimable,
 		   zone->zone_start_pfn,
 		   zone->inactive_ratio);
+	seq_printf(m,
+		   "\n  avg_age_inactive_anon: %u"
+		   "\n  avg_age_active_anon:   %u"
+		   "\n  avg_age_inactive_file: %u"
+		   "\n  avg_age_active_file:   %u",
+		   jiffies_to_msecs(zone->average_age[LRU_INACTIVE_ANON]),
+		   jiffies_to_msecs(zone->average_age[LRU_ACTIVE_ANON]),
+		   jiffies_to_msecs(zone->average_age[LRU_INACTIVE_FILE]),
+		   jiffies_to_msecs(zone->average_age[LRU_ACTIVE_FILE]));
 	seq_putc(m, '\n');
 }
 

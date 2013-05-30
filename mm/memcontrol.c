@@ -1003,6 +1003,27 @@ static unsigned long mem_cgroup_nr_lru_pages(struct mem_cgroup *memcg,
 	return total;
 }
 
+static unsigned mem_cgroup_avg_age(struct mem_cgroup *memcg, enum lru_list lru)
+{
+	struct mem_cgroup_per_zone *mz;
+	unsigned long size = 0, pages;
+	int nid, zid;
+	u64 age = 0;
+
+	for_each_node_state(nid, N_MEMORY) {
+		for (zid = 0; zid < MAX_NR_ZONES; zid++) {
+			mz = mem_cgroup_zoneinfo(memcg, nid, zid);
+			pages = mz->lru_size[lru];
+			size += pages;
+			age += (u64)pages * mz->lruvec.age[lru];
+		}
+	}
+
+	if (size)
+		do_div(age, size);
+	return jiffies_to_msecs(age);
+}
+
 static bool mem_cgroup_event_ratelimit(struct mem_cgroup *memcg,
 				       enum mem_cgroup_events_target target)
 {
@@ -4834,6 +4855,11 @@ static void mem_cgroup_force_empty_list(struct mem_cgroup *memcg,
 			break;
 		}
 		page = list_entry(list->prev, struct page, lru);
+		if (is_lru_milestone(lruvec, &page->lru)) {
+			remove_lru_milestone(lruvec, lru);
+			spin_unlock_irqrestore(&zone->lru_lock, flags);
+			continue;
+		}
 		if (busy == page) {
 			list_move(&page->lru, list);
 			busy = NULL;
@@ -5419,6 +5445,10 @@ static int memcg_stat_show(struct cgroup *cont, struct cftype *cft,
 	for (i = 0; i < NR_LRU_LISTS; i++)
 		seq_printf(m, "%s %lu\n", mem_cgroup_lru_names[i],
 			   mem_cgroup_nr_lru_pages(memcg, BIT(i)) * PAGE_SIZE);
+
+	for (i = 0; i < NR_EVICTABLE_LRU_LISTS; i++)
+		seq_printf(m, "avg_age_%s %u\n", mem_cgroup_lru_names[i],
+			   mem_cgroup_avg_age(memcg, i));
 
 	/* Hierarchical information */
 	{
@@ -6051,6 +6081,8 @@ static int alloc_mem_cgroup_per_zone_info(struct mem_cgroup *memcg, int node)
 	 */
 	if (!node_state(node, N_NORMAL_MEMORY))
 		tmp = -1;
+	/* Try to decrease NR_LRU_MILESTONES if this happens */
+	BUILD_BUG_ON(sizeof(struct mem_cgroup_per_node) > 2 * PAGE_SIZE);
 	pn = kzalloc_node(sizeof(*pn), GFP_KERNEL, tmp);
 	if (!pn)
 		return 1;

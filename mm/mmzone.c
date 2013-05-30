@@ -89,12 +89,22 @@ int memmap_valid_within(unsigned long pfn,
 
 void lruvec_init(struct lruvec *lruvec)
 {
+	unsigned long now = jiffies;
 	enum lru_list lru;
+	int i;
 
 	memset(lruvec, 0, sizeof(struct lruvec));
 
 	for_each_lru(lru)
 		INIT_LIST_HEAD(&lruvec->lists[lru]);
+
+	for_each_evictable_lru(lru) {
+		for (i = 0; i < NR_LRU_MILESTONES; i++) {
+			INIT_LIST_HEAD(&lruvec->milestones[lru][i].lru);
+			lruvec->milestones[lru][i].timestamp = now;
+		}
+		lruvec->next_timestamp[lru] = now;
+	}
 }
 
 #if defined(CONFIG_NUMA_BALANCING) && !defined(LAST_NID_NOT_IN_PAGE_FLAGS)

@@ -7,6 +7,7 @@
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/wait.h>
+#include <linux/workqueue.h>
 #include <linux/bitops.h>
 #include <linux/cache.h>
 #include <linux/threads.h>
@@ -164,6 +165,7 @@ enum lru_list {
 	LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,
 	LRU_ACTIVE_FILE = LRU_BASE + LRU_FILE + LRU_ACTIVE,
 	LRU_UNEVICTABLE,
+	NR_EVICTABLE_LRU_LISTS = LRU_UNEVICTABLE,
 	NR_LRU_LISTS
 };
 
@@ -199,13 +201,34 @@ struct zone_reclaim_stat {
 	unsigned long		recent_scanned[2];
 };
 
+struct lru_milestone {
+	unsigned long		timestamp;
+	struct list_head	lru;
+};
+
+#define NR_LRU_MILESTONES	16
+
 struct lruvec {
 	struct list_head lists[NR_LRU_LISTS];
 	struct zone_reclaim_stat reclaim_stat;
 #ifdef CONFIG_MEMCG
 	struct zone *zone;
 #endif
+	unsigned long		age[NR_EVICTABLE_LRU_LISTS];
+	unsigned long		next_timestamp[NR_EVICTABLE_LRU_LISTS];
+	unsigned char		last_milestone[NR_EVICTABLE_LRU_LISTS];
+	struct lru_milestone	milestones[NR_EVICTABLE_LRU_LISTS][NR_LRU_MILESTONES];
 };
+
+static inline bool
+is_lru_milestone(struct lruvec *lruvec, struct list_head *list)
+{
+	return unlikely(list >= &lruvec->milestones[0][0].lru &&
+			list <  &lruvec->milestones[NR_EVICTABLE_LRU_LISTS]
+						   [NR_LRU_MILESTONES].lru);
+}
+
+void remove_lru_milestone(struct lruvec *lruvec, enum lru_list lru);
 
 /* Mask used at gathering information at once (see memcontrol.c) */
 #define LRU_ALL_FILE (BIT(LRU_INACTIVE_FILE) | BIT(LRU_ACTIVE_FILE))
@@ -487,6 +510,9 @@ struct zone {
 	 * rarely used fields:
 	 */
 	const char		*name;
+
+	struct delayed_work	milestones_work;
+	unsigned long		average_age[NR_EVICTABLE_LRU_LISTS];
 } ____cacheline_internodealigned_in_smp;
 
 typedef enum {
