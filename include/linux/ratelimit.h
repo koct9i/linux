@@ -76,7 +76,7 @@ extern int ___ratelimit(struct ratelimit_state *rs, const char *func);
 struct percpu_ratelimit {
 	ktime_t		target_time;	/* time of nearest possible event */
 	ktime_t		deadline;	/* inteval to utilize past quota */
-	ktime_t		interval;	/* time between quota assignations */
+	unsigned long	interval;	/* time between quota assignations */
 	u64		quota;		/* amount of events per interval */
 	u64		cur_balance;	/* amount of available events */
 	raw_spinlock_t	lock;		/* protect the state */
