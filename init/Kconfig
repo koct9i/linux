@@ -842,6 +842,10 @@ config NUMA_BALANCING
 
 	  This system will be inactive on UMA systems.
 
+# Internal interface for slowing down tasks
+config DELAY_INJECTION
+	bool
+
 menuconfig CGROUPS
 	boolean "Control Group support"
 	depends on EVENTFD

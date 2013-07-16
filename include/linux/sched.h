@@ -964,6 +964,9 @@ struct sched_statistics {
 	u64			nr_wakeups_affine_attempts;
 	u64			nr_wakeups_passive;
 	u64			nr_wakeups_idle;
+#ifdef CONFIG_DELAY_INJECTION
+	u64			delay_start;
+#endif
 };
 #endif
 
@@ -1349,6 +1352,10 @@ struct task_struct {
 #endif
 #ifdef CONFIG_FAULT_INJECTION
 	int make_it_fail;
+#endif
+#ifdef CONFIG_DELAY_INJECTION
+	ktime_t delay_injection_target;
+	struct callback_head delay_injection_work;
 #endif
 	/*
 	 * when (nr_dirtied >= nr_dirtied_pause), it's time to call
@@ -1909,6 +1916,8 @@ extern struct task_struct *curr_task(int cpu);
 extern void set_curr_task(int cpu, struct task_struct *p);
 
 void yield(void);
+
+extern void delay_injection_target(struct task_struct *task, ktime_t time);
 
 /*
  * The default (Linux) execution domain.

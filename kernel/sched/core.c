@@ -65,6 +65,7 @@
 #include <linux/unistd.h>
 #include <linux/pagemap.h>
 #include <linux/hrtimer.h>
+#include <linux/task_work.h>
 #include <linux/tick.h>
 #include <linux/debugfs.h>
 #include <linux/ctype.h>
@@ -7560,3 +7561,76 @@ void dump_cpu_task(int cpu)
 	pr_info("Task dump for CPU %d:\n", cpu);
 	sched_show_task(cpu_curr(cpu));
 }
+
+#ifdef CONFIG_DELAY_INJECTION
+
+#define DELAY_INJECTION_SLACK_NS	(NSEC_PER_SEC / 50)
+
+static enum hrtimer_restart delay_injection_wakeup(struct hrtimer *timer)
+{
+	struct hrtimer_sleeper *t =
+		container_of(timer, struct hrtimer_sleeper, timer);
+	struct task_struct *task = t->task;
+
+	t->task = NULL;
+	if (task)
+		wake_up_state(task, TASK_PARKED);
+
+	return HRTIMER_NORESTART;
+}
+
+/*
+ * Here delayed tasks will sleep in 'P'arked state.
+ * This is uninterruptible but killable sleep without contribution into load.
+ */
+static void delay_injection_sleep(struct callback_head *head)
+{
+	struct task_struct *task = current;
+	struct hrtimer_sleeper t;
+
+	__set_task_state(task, TASK_WAKEKILL | TASK_PARKED);
+
+	hrtimer_init_on_stack(&t.timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	hrtimer_set_expires_range_ns(&t.timer, current->delay_injection_target,
+				     DELAY_INJECTION_SLACK_NS);
+
+	t.timer.function = delay_injection_wakeup;
+	t.task = task;
+
+	hrtimer_start_expires(&t.timer, HRTIMER_MODE_ABS);
+	if (!hrtimer_active(&t.timer))
+		t.task = NULL;
+
+	if (likely(t.task))
+		schedule();
+
+	hrtimer_cancel(&t.timer);
+	destroy_hrtimer_on_stack(&t.timer);
+	task->delay_injection_target.tv64 = 0;
+
+	__set_task_state(task, TASK_RUNNING);
+}
+
+/*
+ * Update target time and schedule delay-injection task-work.
+ */
+void delay_injection_target(struct task_struct *task, ktime_t time)
+{
+	if (task->delay_injection_target.tv64 < time.tv64) {
+		if (!task->delay_injection_target.tv64) {
+			task->delay_injection_work.func = delay_injection_sleep;
+			task_work_add(task, &task->delay_injection_work, false);
+			set_tsk_thread_flag(task, TIF_NOTIFY_RESUME);
+			/*
+			 * Set need-resched to push task off the cpu even this
+			 * is the only one runnable task here, otherwise it can
+			 * cansume resources endlessly.
+			 */
+			set_tsk_need_resched(task);
+		}
+		task->delay_injection_target = time;
+	}
+}
+EXPORT_SYMBOL(delay_injection_target);
+
+#endif /* CONFIG_DELAY_INJECTION */
