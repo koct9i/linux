@@ -1,6 +1,7 @@
 #include <linux/cgroup.h>
 #include <linux/slab.h>
 #include <linux/percpu.h>
+#include <linux/ratelimit.h>
 #include <linux/spinlock.h>
 #include <linux/cpumask.h>
 #include <linux/seq_file.h>
@@ -25,12 +26,19 @@ enum cpuacct_stat_index {
 	CPUACCT_STAT_NSTATS,
 };
 
+struct cpuacct_percpu {
+	u64 cpuusage;
+	unsigned long nr_delays;
+	unsigned long cpu_balance;
+	struct ratelimit_batch cpulimit_batch;
+};
+
 /* track cpu usage of a group of tasks and its child groups */
 struct cpuacct {
 	struct cgroup_subsys_state css;
-	/* cpuusage holds pointer to a u64-type object on every cpu */
-	u64 __percpu *cpuusage;
+	struct cpuacct_percpu __percpu *percpu;
 	struct kernel_cpustat __percpu *cpustat;
+	struct ratelimit cpulimit;
 };
 
 /* return cpu accounting group corresponding to this container */
@@ -59,10 +67,10 @@ static inline struct cpuacct *parent_ca(struct cpuacct *ca)
 	return cgroup_ca(ca->css.cgroup->parent);
 }
 
-static DEFINE_PER_CPU(u64, root_cpuacct_cpuusage);
+static DEFINE_PER_CPU(struct cpuacct_percpu, root_cpuacct_percpu);
 static struct cpuacct root_cpuacct = {
 	.cpustat	= &kernel_cpustat,
-	.cpuusage	= &root_cpuacct_cpuusage,
+	.percpu		= &root_cpuacct_percpu,
 };
 
 /* create a new cpu accounting group */
@@ -70,25 +78,29 @@ static struct cgroup_subsys_state *cpuacct_css_alloc(struct cgroup *cgrp)
 {
 	struct cpuacct *ca;
 
-	if (!cgrp->parent)
-		return &root_cpuacct.css;
+	if (!cgrp->parent) {
+		ca = &root_cpuacct;
+		goto do_init;
+	}
 
 	ca = kzalloc(sizeof(*ca), GFP_KERNEL);
 	if (!ca)
 		goto out;
 
-	ca->cpuusage = alloc_percpu(u64);
-	if (!ca->cpuusage)
+	ca->percpu = alloc_percpu(struct cpuacct_percpu);
+	if (!ca->percpu)
 		goto out_free_ca;
 
 	ca->cpustat = alloc_percpu(struct kernel_cpustat);
 	if (!ca->cpustat)
-		goto out_free_cpuusage;
+		goto out_free_percpu;
+do_init:
+	ratelimit_init(&ca->cpulimit);
 
 	return &ca->css;
 
-out_free_cpuusage:
-	free_percpu(ca->cpuusage);
+out_free_percpu:
+	free_percpu(ca->percpu);
 out_free_ca:
 	kfree(ca);
 out:
@@ -100,14 +112,15 @@ static void cpuacct_css_free(struct cgroup *cgrp)
 {
 	struct cpuacct *ca = cgroup_ca(cgrp);
 
+	ratelimit_destroy(&ca->cpulimit);
 	free_percpu(ca->cpustat);
-	free_percpu(ca->cpuusage);
+	free_percpu(ca->percpu);
 	kfree(ca);
 }
 
 static u64 cpuacct_cpuusage_read(struct cpuacct *ca, int cpu)
 {
-	u64 *cpuusage = per_cpu_ptr(ca->cpuusage, cpu);
+	u64 *cpuusage = per_cpu_ptr(&ca->percpu->cpuusage, cpu);
 	u64 data;
 
 #ifndef CONFIG_64BIT
@@ -126,7 +139,7 @@ static u64 cpuacct_cpuusage_read(struct cpuacct *ca, int cpu)
 
 static void cpuacct_cpuusage_write(struct cpuacct *ca, int cpu, u64 val)
 {
-	u64 *cpuusage = per_cpu_ptr(ca->cpuusage, cpu);
+	u64 *cpuusage = per_cpu_ptr(&ca->percpu->cpuusage, cpu);
 
 #ifndef CONFIG_64BIT
 	/*
@@ -170,6 +183,33 @@ static int cpuusage_write(struct cgroup *cgrp, struct cftype *cftype,
 
 out:
 	return err;
+}
+
+static u64 cpulimit_read(struct cgroup *cgrp, struct cftype *cft)
+{
+	struct cpuacct *ca = cgroup_ca(cgrp);
+
+	return ratelimit_quota(&ca->cpulimit, NSEC_PER_SEC);
+}
+
+static int cpulimit_write(struct cgroup *cgrp, struct cftype *cft, u64 val)
+{
+	struct cpuacct *ca = cgroup_ca(cgrp);
+
+	do_div(val, 10);
+	ratelimit_setup(&ca->cpulimit, NSEC_PER_SEC / 10, val);
+	return 0;
+}
+
+static u64 cpulimit_delays(struct cgroup *cgrp, struct cftype *cft)
+{
+	struct cpuacct *ca = cgroup_ca(cgrp);
+	u64 sum = 0;
+	int i;
+
+	for_each_present_cpu(i)
+		sum += per_cpu(ca->percpu->nr_delays, i);
+	return sum;
 }
 
 static int cpuacct_percpu_seq_read(struct cgroup *cgroup, struct cftype *cft,
@@ -235,6 +275,17 @@ static struct cftype files[] = {
 		.name = "stat",
 		.read_map = cpuacct_stats_show,
 	},
+	{
+		.name = "limit",
+		.read_u64 = cpulimit_read,
+		.write_u64 = cpulimit_write,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "delays",
+		.read_u64 = cpulimit_delays,
+		.flags = CFTYPE_NOT_ON_ROOT,
+	},
 	{ }	/* terminate */
 };
 
@@ -245,7 +296,7 @@ static struct cftype files[] = {
  */
 void cpuacct_charge(struct task_struct *tsk, u64 cputime)
 {
-	struct cpuacct *ca;
+	struct cpuacct *ca, *parent;
 	int cpu;
 
 	cpu = task_cpu(tsk);
@@ -254,13 +305,27 @@ void cpuacct_charge(struct task_struct *tsk, u64 cputime)
 
 	ca = task_ca(tsk);
 
+	if (ratelimit_charge_batch(&ca->cpulimit,
+				&tsk->cpulimit_batch, cputime)) {
+		this_cpu_inc(ca->percpu->nr_delays);
+		delay_injection_target(tsk, ca->cpulimit.target_time);
+	}
+
 	while (true) {
-		u64 *cpuusage = per_cpu_ptr(ca->cpuusage, cpu);
+		u64 *cpuusage = per_cpu_ptr(&ca->percpu->cpuusage, cpu);
 		*cpuusage += cputime;
 
-		ca = parent_ca(ca);
-		if (!ca)
+		parent = parent_ca(ca);
+		if (!parent)
 			break;
+
+		if (ratelimit_charge_percpu(&parent->cpulimit,
+					&ca->percpu->cpulimit_batch, cputime)) {
+			this_cpu_inc(parent->percpu->nr_delays);
+			delay_injection_target(tsk, parent->cpulimit.target_time);
+		}
+
+		ca = parent;
 	}
 
 	rcu_read_unlock();
@@ -286,10 +351,33 @@ void cpuacct_account_field(struct task_struct *p, int index, u64 val)
 	rcu_read_unlock();
 }
 
+static void cpuacct_fork(struct task_struct *task)
+{
+	struct task_struct *parent = current;
+
+	task->cpulimit_batch.balance = parent->cpulimit_batch.balance / 2;
+	parent->cpulimit_batch.balance -= task->cpulimit_batch.balance;
+}
+
+static void cpuacct_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
+{
+	struct task_struct *task;
+	struct cpuacct *ca;
+
+	cgroup_taskset_for_each(task, cgrp, tset) {
+		rcu_read_lock();
+		ca = task_ca(task);
+		ratelimit_flush_batch(&ca->cpulimit, &task->cpulimit_batch);
+		rcu_read_unlock();
+	}
+}
+
 struct cgroup_subsys cpuacct_subsys = {
 	.name		= "cpuacct",
 	.css_alloc	= cpuacct_css_alloc,
 	.css_free	= cpuacct_css_free,
+	.fork		= cpuacct_fork,
+	.attach		= cpuacct_attach,
 	.subsys_id	= cpuacct_subsys_id,
 	.base_cftypes	= files,
 	.early_init	= 1,

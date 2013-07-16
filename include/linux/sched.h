@@ -50,6 +50,7 @@ struct sched_param {
 #include <linux/latencytop.h>
 #include <linux/cred.h>
 #include <linux/llist.h>
+#include <linux/ratelimit.h>
 #include <linux/uidgid.h>
 #include <linux/gfp.h>
 
@@ -1170,6 +1171,9 @@ struct task_struct {
 		VTIME_USER,
 		VTIME_SYS,
 	} vtime_snap_whence;
+#endif
+#ifdef CONFIG_CGROUP_CPUACCT
+	struct ratelimit_batch cpulimit_batch;
 #endif
 	unsigned long nvcsw, nivcsw; /* context switch counts */
 	struct timespec start_time; 		/* monotonic time */
