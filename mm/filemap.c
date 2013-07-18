@@ -1843,6 +1843,14 @@ static void do_async_mmap_readahead(struct vm_area_struct *vma,
 					   page, offset, ra->ra_pages);
 }
 
+#ifdef CONFIG_PAGEFAULTS_LOG
+void log_pagefault(struct file *file, pgoff_t offset);
+#else
+static inline void log_pagefault(struct file *file, pgoff_t offset)
+{
+}
+#endif
+
 /**
  * filemap_fault - read in file data for page fault handling
  * @vma:	vma in which the fault was taken
@@ -1898,6 +1906,7 @@ int filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 		do_sync_mmap_readahead(vma, ra, file, offset);
 		count_vm_event(PGMAJFAULT);
 		mem_cgroup_count_vm_event(vma->vm_mm, PGMAJFAULT);
+		log_pagefault(file, offset);
 		ret = VM_FAULT_MAJOR;
 retry_find:
 		page = find_get_page(mapping, offset);

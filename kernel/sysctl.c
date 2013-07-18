@@ -112,6 +112,16 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
 #ifndef CONFIG_MMU
 extern int sysctl_nr_trim_pages;
 #endif
+#ifdef CONFIG_BLOCK
+extern int blk_iopoll_enabled;
+#endif
+#ifdef CONFIG_PAGEFAULTS_LOG
+extern unsigned int pagefaults_log_nr;
+extern int pagefaults_log_nr_handler(struct ctl_table *table, int write,
+				     void __user *buffer, size_t *lenp,
+				     loff_t *ppos);
+static int hundred_thousands = 100000;
+#endif
 
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
@@ -1530,6 +1540,17 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
+#ifdef CONFIG_PAGEFAULTS_LOG
+	{
+		.procname	= "pagefaults_log_entries",
+		.data		= &pagefaults_log_nr,
+		.maxlen 	= sizeof(pagefaults_log_nr),
+		.mode		= 0644,
+		.extra1		= &zero,
+		.extra2		= &hundred_thousands,
+		.proc_handler	= pagefaults_log_nr_handler,
+	},
+#endif
 	{ }
 };
 

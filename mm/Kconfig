@@ -618,3 +618,12 @@ config MAX_STACK_SIZE_MB
 	  changed to a smaller value in which case that is used.
 
 	  A sane initial value is 80 MB.
+
+config PAGEFAULTS_LOG
+	bool "Enable major pagefaults logging"
+	default y
+	help
+	  Enable major pagefaults logging. Log is accessible via
+	  /proc/pagefaults pseudo-file. The log contains no more than
+	  /proc/sys/vm/pagefaults_log_entries entries.
+	  By default, logging is turned off.
