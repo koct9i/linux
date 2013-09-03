@@ -131,7 +131,6 @@ binary-arch: install
 
 binary: binary-arch binary-indep
 
-	
 clean:
 	make clean
 	dh_clean

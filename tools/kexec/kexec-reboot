@@ -1,0 +1,15 @@
+#!/bin/sh
+
+[ "$1" = "-h" ] && { echo "Usage: $(basename $0) [kernel version]"; exit; }
+
+kver="${1-$(uname -r)}"
+kernel="/boot/vmlinuz-$kver"
+initrd="/boot/initrd.img-$kver"
+cmdline="$(cat /proc/cmdline | sed -e "s@BOOT_IMAGE=[^ ]*@BOOT_IMAGE=$kernel@")"
+
+[ ! -e $kernel -o ! -e $initrd ] && { echo "Invalid kernel version"; exit; }
+
+kexec -l "$kernel" --append="$cmdline" --initrd="$initrd"
+sync
+umount -a
+kexec -e
