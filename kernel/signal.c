@@ -52,6 +52,7 @@
 static struct kmem_cache *sigqueue_cachep;
 
 int print_fatal_signals __read_mostly;
+int sysctl_log_fatal_signals __read_mostly;
 
 static void __user *sig_handler(struct task_struct *t, int sig)
 {
@@ -2229,6 +2230,7 @@ relock:
 
 	for (;;) {
 		struct k_sigaction *ka;
+		int core_dumped = 0;
 
 		if (unlikely(current->jobctl & JOBCTL_STOP_PENDING) &&
 		    do_signal_stop(0))
@@ -2342,7 +2344,16 @@ relock:
 			 * that value and ignore the one we pass it.
 			 */
 			do_coredump(&ksig->info);
+			core_dumped = 1;
 		}
+
+		if (sysctl_log_fatal_signals && has_group_leader_pid(current))
+			printk(KERN_INFO "pid %d (%s), uid %d: exited on signal %d%s\n",
+				task_pid_vnr(current),
+				current->comm,
+				current_uid().val,
+				signal->group_exit_code & 0x7f,
+				core_dumped ? " (core dumped)" : "");
 
 		/*
 		 * Death signals, no core dump.
