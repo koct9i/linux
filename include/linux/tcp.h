@@ -92,6 +92,10 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+	u32	txcnt_enable;   /* Other side decided to report its number
+				   of transmitted packets */
+	u32	txdp;           /* Actual number of transmitted packets
+				   from the other side */
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
@@ -212,6 +216,11 @@ struct tcp_sock {
  *      Options received (usually on last packet, some only on SYN packets).
  */
 	struct tcp_options_received rx_opt;
+
+	u32	txcnt_enable;	/* whether or not we should report number
+				   of transmitted packets in a TCP option */
+	u32	txdp;		/* num of (re)transmitted packets with data */
+	u32	rxdp;		/* num of received packets with data */
 
 /*
  *	Slow start and congestion control (see also Nagle, and Karn & Partridge)

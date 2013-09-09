@@ -180,6 +180,8 @@ static void tcp_event_data_sent(struct tcp_sock *tp,
 	if ((u32)(now - icsk->icsk_ack.lrcvtime) < icsk->icsk_ack.ato &&
 	    (!dst || !dst_metric(dst, RTAX_QUICKACK)))
 			icsk->icsk_ack.pingpong = 1;
+
+	tp->txdp++;
 }
 
 /* Account for an ACK we sent. */
@@ -414,6 +416,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_TS		(1 << 1)
 #define OPTION_MD5		(1 << 2)
 #define OPTION_WSCALE		(1 << 3)
+#define OPTION_TXCNT		(1 << 4)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 
 struct tcp_out_options {
@@ -424,6 +427,7 @@ struct tcp_out_options {
 	u8 hash_size;		/* bytes in hash_location */
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+	u32 txdp;		/* number of transmitted packets with data */
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 };
 
@@ -523,6 +527,14 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			align[0] = align[1] = TCPOPT_NOP;
 		}
 		ptr += (foc->len + 3) >> 2;
+	}
+
+	if (unlikely(OPTION_TXCNT & options)) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+			       (TCPOPT_NOP << 16) |
+			       (TCPOPT_TXCNT << 8) |
+			       TCPOLEN_TXCNT);
+		*ptr++ = htonl(opts->txdp);
 	}
 }
 
@@ -661,6 +673,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int size = 0;
 	unsigned int eff_sacks;
+	unsigned int data_len = skb ? skb->len : 0;
 
 	opts->options = 0;
 
@@ -690,6 +703,14 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 			      TCPOLEN_SACK_PERBLOCK);
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+	}
+
+	if (unlikely(sysctl_tcp_txcnt_enable &&
+		     (tp->rx_opt.txcnt_enable || tp->txcnt_enable) &&
+		     data_len)) {
+		opts->options |= OPTION_TXCNT;
+		opts->txdp = tp->txdp + 1;
+		size += TCPOLEN_TXCNT_ALIGNED;
 	}
 
 	return size;

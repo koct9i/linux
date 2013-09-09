@@ -281,6 +281,7 @@
 #include <net/busy_poll.h>
 
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
+int sysctl_tcp_txcnt_enable __read_mostly = 0;
 
 int sysctl_tcp_min_tso_segs __read_mostly = 2;
 
@@ -2596,10 +2597,16 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		else
 			tp->tsoffset = val - tcp_time_stamp;
 		break;
+
 	case TCP_NOTSENT_LOWAT:
 		tp->notsent_lowat = val;
 		sk->sk_write_space(sk);
 		break;
+
+	case TCP_TXCNT_ENABLE:
+		tp->txcnt_enable = !!val;
+		break;
+
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -2831,6 +2838,15 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		break;
 	case TCP_NOTSENT_LOWAT:
 		val = tp->notsent_lowat;
+		break;
+	case TCP_TXCNT_ENABLE:
+		val = tp->txcnt_enable;
+		break;
+	case TCP_RXCNT:
+		if (sysctl_tcp_txcnt_enable && tp->rx_opt.txdp)
+			val = tp->rx_opt.txdp - tp->rxdp;
+		else
+			val = 0;
 		break;
 	default:
 		return -ENOPROTOOPT;

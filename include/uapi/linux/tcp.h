@@ -113,6 +113,11 @@ enum {
 #define TCP_TIMESTAMP		24
 #define TCP_NOTSENT_LOWAT	25	/* limit number of unsent bytes in write queue */
 
+#define TCP_TXCNT_ENABLE	27	/* Enable feature that reports
+					   number of TX packets via TCP
+					   option */
+#define TCP_RXCNT		28	/* Retrieve RX data packets loss */
+
 struct tcp_repair_opt {
 	__u32	opt_code;
 	__u32	opt_val;

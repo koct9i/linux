@@ -629,6 +629,8 @@ static void tcp_event_data_recv(struct sock *sk, struct sk_buff *skb)
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	u32 now;
 
+	tp->rxdp++;
+
 	inet_csk_schedule_ack(sk);
 
 	tcp_measure_rcv_mss(sk, skb);
@@ -3591,6 +3593,14 @@ void tcp_parse_options(const struct sk_buff *skb,
 			if (opsize > length)
 				return;	/* don't parse partial options */
 			switch (opcode) {
+			case TCPOPT_TXCNT:
+				if (!sysctl_tcp_txcnt_enable)
+					break;
+
+				opt_rx->txcnt_enable = 1;
+				opt_rx->txdp = get_unaligned_be32(ptr);
+				break;
+
 			case TCPOPT_MSS:
 				if (opsize == TCPOLEN_MSS && th->syn && !estab) {
 					u16 in_mss = get_unaligned_be16(ptr);

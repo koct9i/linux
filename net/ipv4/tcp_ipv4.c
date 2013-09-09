@@ -2334,6 +2334,55 @@ out:
 	return 0;
 }
 
+static int tcp4_stat_seq_show(struct seq_file *seq, void *v)
+{
+	struct tcp_iter_state *st;
+	struct sock *sk;
+	const struct tcp_sock *tp;
+	const struct inet_sock *inet;
+	__be32 dest;
+	__be32 src;
+	__u16 destp;
+	__u16 srcp;
+
+	if (!sysctl_tcp_txcnt_enable)
+		goto out;
+
+	if (v == SEQ_START_TOKEN) {
+		seq_printf(seq, "  sl  local_address rem_address  inode "
+				"  txdp   rxdp  rtxdp\n");
+		goto out;
+	}
+	st = seq->private;
+	sk = v;
+
+	if (st->state == TCP_SEQ_STATE_ESTABLISHED ||
+	    st->state == TCP_SEQ_STATE_LISTENING) {
+		tp = tcp_sk(sk);
+		inet = inet_sk(sk);
+		dest = inet->inet_daddr;
+		src = inet->inet_rcv_saddr;
+		destp = ntohs(inet->inet_dport);
+		srcp = ntohs(inet->inet_sport);
+
+		seq_printf(seq,
+			   "%4d: "
+			   "%08X:%04X "
+			   "%08X:%04X "
+			   "%lu "
+			   "%6u %6u %6u\n",
+			   st->num,
+			   src, srcp,
+			   dest, destp,
+			   sock_i_ino(sk),
+			   tp->txdp,
+			   tp->rxdp,
+			   tp->rx_opt.txdp);
+	}
+out:
+	return 0;
+}
+
 static const struct file_operations tcp_afinfo_seq_fops = {
 	.owner   = THIS_MODULE,
 	.open    = tcp_seq_open,
@@ -2351,14 +2400,34 @@ static struct tcp_seq_afinfo tcp4_seq_afinfo = {
 	},
 };
 
+static struct tcp_seq_afinfo tcp4_stat_seq_afinfo = {
+	.name		= "tcp_stat",
+	.family		= AF_INET,
+	.seq_fops	= &tcp_afinfo_seq_fops,
+	.seq_ops	= {
+		.show		= tcp4_stat_seq_show,
+	},
+};
+
 static int __net_init tcp4_proc_init_net(struct net *net)
 {
-	return tcp_proc_register(net, &tcp4_seq_afinfo);
+	int ret;
+
+	ret = tcp_proc_register(net, &tcp4_seq_afinfo);
+	if (ret)
+		return ret;
+
+	ret = tcp_proc_register(net, &tcp4_stat_seq_afinfo);
+	if (ret)
+		tcp_proc_unregister(net, &tcp4_seq_afinfo);
+
+	return ret;
 }
 
 static void __net_exit tcp4_proc_exit_net(struct net *net)
 {
 	tcp_proc_unregister(net, &tcp4_seq_afinfo);
+	tcp_proc_unregister(net, &tcp4_stat_seq_afinfo);
 }
 
 static struct pernet_operations tcp4_net_ops = {
