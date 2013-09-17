@@ -500,7 +500,7 @@ static void __init memblock_x86_reserve_range_setup_data(void)
  * --------- Crashkernel reservation ------------------------------
  */
 
-#ifdef CONFIG_KEXEC
+#if defined(CONFIG_KEXEC) && defined(CONFIG_CRASH_DUMP)
 
 /*
  * Keep the crash kernel below this limit.  On 32 bits earlier kernels
