@@ -4460,8 +4460,10 @@ queue_and_out:
 
 		if (eaten > 0)
 			kfree_skb_partial(skb, fragstolen);
-		if (!sock_flag(sk, SOCK_DEAD))
+		if (!sock_flag(sk, SOCK_DEAD)) {
+			tp->lrcvtime = tcp_time_stamp;
 			sk->sk_data_ready(sk);
+		}
 		return;
 	}
 
@@ -4926,8 +4928,10 @@ static void tcp_urg(struct sock *sk, struct sk_buff *skb, const struct tcphdr *t
 			if (skb_copy_bits(skb, ptr, &tmp, 1))
 				BUG();
 			tp->urg_data = TCP_URG_VALID | tmp;
-			if (!sock_flag(sk, SOCK_DEAD))
+			if (!sock_flag(sk, SOCK_DEAD)) {
+				tp->lrcvtime = tcp_time_stamp;
 				sk->sk_data_ready(sk);
+			}
 		}
 	}
 }
@@ -5222,6 +5226,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 no_ack:
 			if (eaten)
 				kfree_skb_partial(skb, fragstolen);
+			tp->lrcvtime = tcp_time_stamp;
 			sk->sk_data_ready(sk);
 			return;
 		}

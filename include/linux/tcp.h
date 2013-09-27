@@ -315,6 +315,8 @@ struct tcp_sock {
 	 * socket. Used to retransmit SYNACKs etc.
 	 */
 	struct request_sock *fastopen_rsk;
+
+	u32 lrcvtime;
 };
 
 enum tsq_flags {

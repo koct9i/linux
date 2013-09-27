@@ -187,8 +187,11 @@ struct tcp_info {
 
 	__u32	tcpi_total_retrans;
 
+
 	__u64	tcpi_pacing_rate;
 	__u64	tcpi_max_pacing_rate;
+
+	__u32	tcpi_last_new_data_recv;
 };
 
 /* for TCP_MD5SIG socket option */
