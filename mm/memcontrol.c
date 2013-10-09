@@ -336,6 +336,10 @@ struct mem_cgroup {
 	 */
 	unsigned long move_charge_at_immigrate;
 	/*
+	 *
+	 */
+	unsigned long recharge_on_pgfault;
+	/*
 	 * set > 0 if pages under this cgroup are moving to other cgroup.
 	 */
 	atomic_t	moving_account;
@@ -4420,6 +4424,33 @@ static int mem_cgroup_move_charge_write(struct cgroup_subsys_state *css,
 }
 #endif
 
+static u64 mem_cgroup_recharge_on_pgfault_read(struct cgroup_subsys_state *css,
+				       struct cftype *cft)
+{
+	return mem_cgroup_from_css(css)->recharge_on_pgfault;
+}
+
+#ifdef CONFIG_MMU
+static int mem_cgroup_recharge_on_pgfault_write(struct cgroup_subsys_state *css,
+						struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (mem_cgroup_is_root(memcg))
+		return -EINVAL;
+
+	memcg->recharge_on_pgfault = !!val;
+
+	return 0;
+}
+#else
+static int mem_cgroup_recharge_on_pgfault_write(struct cgroup_subsys_state *css,
+					struct cftype *cft, u64 val)
+{
+	return -ENOSYS;
+}
+#endif
+
 #ifdef CONFIG_NUMA
 static int memcg_numa_stat_show(struct seq_file *m, void *v)
 {
@@ -5285,6 +5316,11 @@ static struct cftype mem_cgroup_files[] = {
 		.write_u64 = mem_cgroup_move_charge_write,
 	},
 	{
+		.name = "recharge_on_pgfault",
+		.read_u64 = mem_cgroup_recharge_on_pgfault_read,
+		.write_u64 = mem_cgroup_recharge_on_pgfault_write,
+	},
+	{
 		.name = "oom_control",
 		.seq_show = mem_cgroup_oom_control_read,
 		.write_u64 = mem_cgroup_oom_control_write,
@@ -5516,6 +5552,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	memcg->last_scanned_node = MAX_NUMNODES;
 	INIT_LIST_HEAD(&memcg->oom_notify);
 	memcg->move_charge_at_immigrate = 0;
+	memcg->recharge_on_pgfault = 0;
 	mutex_init(&memcg->thresholds_lock);
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
@@ -5547,6 +5584,7 @@ mem_cgroup_css_online(struct cgroup_subsys_state *css)
 	memcg->use_hierarchy = parent->use_hierarchy;
 	memcg->oom_kill_disable = parent->oom_kill_disable;
 	memcg->swappiness = mem_cgroup_swappiness(parent);
+	memcg->recharge_on_pgfault = parent->recharge_on_pgfault;
 
 	if (parent->use_hierarchy) {
 		res_counter_init(&memcg->res, &parent->res);
@@ -6260,6 +6298,79 @@ static void mem_cgroup_move_task(struct cgroup_subsys_state *css,
 	}
 	if (mc.to)
 		mem_cgroup_clear_mc();
+}
+
+static void mem_cgroup_recharge_page(struct page *page,
+				     struct mem_cgroup *from,
+				     struct mem_cgroup *to)
+{
+	unsigned int nr_pages;
+	unsigned long uninitialized_var(flags);
+	struct page_cgroup *page_pc;
+	int ret;
+
+	if (!get_page_unless_zero(page))
+		goto out;
+	if (isolate_lru_page(page))
+		goto put;
+
+	nr_pages = hpage_nr_pages(page);
+	if (nr_pages > 1) {
+		VM_BUG_ON(!PageTransHuge(page));
+		flags = compound_lock_irqsave(page);
+	}
+
+	/* try_charge */
+	ret = try_charge(to, GFP_KERNEL, nr_pages);
+	if (ret)
+		goto putback;
+
+	page_pc = lookup_page_cgroup(page);
+	ret = mem_cgroup_move_account(page, nr_pages, page_pc, from, to);
+	if (!ret) {
+		mem_cgroup_cancel_charge(page, from);
+		mem_cgroup_commit_charge(page, to, true);
+	} else
+		mem_cgroup_cancel_charge(page, to);
+
+putback:
+	if (nr_pages > 1)
+		compound_unlock_irqrestore(page, flags);
+	putback_lru_page(page);
+put:
+	put_page(page);
+out:
+	return;
+}
+
+void mem_cgroup_try_recharge_page(struct page *page)
+{
+	struct mem_cgroup *page_memcg, *curr_memcg;
+	int recharge = 0;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	rcu_read_lock();
+	curr_memcg = mem_cgroup_from_task(current);
+	if (curr_memcg && !mem_cgroup_is_root(curr_memcg) &&
+	    curr_memcg->recharge_on_pgfault) {
+		css_get(&curr_memcg->css);
+		recharge = 1;
+	}
+	rcu_read_unlock();
+
+	if (likely(!recharge))
+		return;
+
+	page_memcg = try_get_mem_cgroup_from_page(page);
+	if (page_memcg) {
+		if (page_memcg != curr_memcg)
+			mem_cgroup_recharge_page(page, page_memcg, curr_memcg);
+
+		css_put(&page_memcg->css);
+	}
+	css_put(&curr_memcg->css);
 }
 #else	/* !CONFIG_MMU */
 static int mem_cgroup_can_attach(struct cgroup_subsys_state *css,

@@ -1976,6 +1976,7 @@ retry_find:
 		return VM_FAULT_SIGBUS;
 	}
 
+	mem_cgroup_try_recharge_page(page);
 	vmf->page = page;
 	return ret | VM_FAULT_LOCKED;
 

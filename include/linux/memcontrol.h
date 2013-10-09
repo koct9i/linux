@@ -182,6 +182,7 @@ void mem_cgroup_print_bad_page(struct page *page);
 
 unsigned int mem_cgroup_low_limit_scale(struct mem_cgroup *memcg,
 					unsigned int parent_scale);
+void mem_cgroup_try_recharge_page(struct page *page);
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
 
@@ -359,6 +360,10 @@ static inline unsigned int mem_cgroup_low_limit_scale(struct mem_cgroup *memcg,
 						      unsigned int parent_scale)
 {
 	return 0;
+}
+
+static inline void mem_cgroup_try_recharge_page(struct page *page)
+{
 }
 #endif /* CONFIG_MEMCG */
 
