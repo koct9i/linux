@@ -85,19 +85,10 @@ void flush_cache_range(struct vm_area_struct *vma, unsigned long start, unsigned
 
 void flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr, unsigned long pfn)
 {
-	if (cache_is_vivt()) {
+	if (cache_is_vivt())
 		vivt_flush_cache_page(vma, user_addr, pfn);
-		return;
-	}
-
-	if (cache_is_vipt_aliasing()) {
+	else if (cache_is_vipt_aliasing())
 		flush_pfn_alias(pfn, user_addr);
-		__flush_icache_all();
-		return;
-	}
-
-	if (vma->vm_flags & VM_EXEC && icache_is_vivt_asid_tagged())
-		__flush_icache_all();
 }
 
 #else
@@ -232,21 +223,13 @@ static void __flush_dcache_aliases(struct address_space *mapping, struct page *p
 	flush_dcache_mmap_unlock(mapping);
 }
 
-#if __LINUX_ARM_ARCH__ >= 6
-void __sync_icache_dcache(pte_t pteval)
+void flush_icache_page(struct vm_area_struct *vma, struct page *page)
 {
-	unsigned long pfn;
-	struct page *page;
 	struct address_space *mapping;
 
-	if (cache_is_vipt_nonaliasing() && !pte_exec(pteval))
-		/* only flush non-aliasing VIPT caches for exec mappings */
-		return;
-	pfn = pte_pfn(pteval);
-	if (!pfn_valid(pfn))
+	if (cache_is_vipt_nonaliasing() && !(vma->vm_flags & VM_EXEC))
 		return;
 
-	page = pfn_to_page(pfn);
 	if (cache_is_vipt_aliasing())
 		mapping = page_mapping(page);
 	else
@@ -254,11 +237,7 @@ void __sync_icache_dcache(pte_t pteval)
 
 	if (!test_and_set_bit(PG_dcache_clean, &page->flags))
 		__flush_dcache_page(mapping, page);
-
-	if (pte_exec(pteval))
-		__flush_icache_all();
 }
-#endif
 
 /*
  * Ensure cache coherency between kernel mapping and userspace mapping

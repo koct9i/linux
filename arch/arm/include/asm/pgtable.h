@@ -224,23 +224,13 @@ static inline pte_t *pmd_page_vaddr(pmd_t pmd)
 
 #define pte_present_user(pte)  (pte_present(pte) && (pte_val(pte) & L_PTE_USER))
 
-#if __LINUX_ARM_ARCH__ < 6
-static inline void __sync_icache_dcache(pte_t pteval)
-{
-}
-#else
-extern void __sync_icache_dcache(pte_t pteval);
-#endif
-
 static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 			      pte_t *ptep, pte_t pteval)
 {
 	unsigned long ext = 0;
 
-	if (addr < TASK_SIZE && pte_present_user(pteval)) {
-		__sync_icache_dcache(pteval);
+	if (addr < TASK_SIZE && pte_present_user(pteval))
 		ext |= PTE_EXT_NG;
-	}
 
 	set_pte_ext(ptep, pteval, ext);
 }

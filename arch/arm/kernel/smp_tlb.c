@@ -159,6 +159,10 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 					&ta, 1);
 	} else
 		__flush_tlb_page(vma, uaddr);
+
+	if (vma->vm_flags & VM_EXEC)
+		__flush_icache_all();
+
 	broadcast_tlb_mm_a15_erratum(vma->vm_mm);
 }
 

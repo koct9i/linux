@@ -201,8 +201,6 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long addr,
 	if (mapping) {
 		if (cache_is_vivt())
 			make_coherent(mapping, vma, addr, ptep, pfn);
-		else if (vma->vm_flags & VM_EXEC)
-			__flush_icache_all();
 	}
 }
 #endif	/* __LINUX_ARM_ARCH__ < 6 */

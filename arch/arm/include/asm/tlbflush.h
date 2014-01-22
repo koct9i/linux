@@ -452,6 +452,9 @@ local_flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 
 	if (tlb_flag(TLB_BARRIER))
 		dsb(nsh);
+
+	if (vma->vm_flags & VM_EXEC)
+		__flush_icache_all();
 }
 
 static inline void

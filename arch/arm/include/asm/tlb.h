@@ -69,10 +69,13 @@ DECLARE_PER_CPU(struct mmu_gather, mmu_gathers);
  */
 static inline void tlb_flush(struct mmu_gather *tlb)
 {
-	if (tlb->fullmm || !tlb->vma)
+	if (tlb->fullmm || !tlb->vma) {
 		flush_tlb_mm(tlb->mm);
-	else if (tlb->range_end > 0) {
+		__flush_icache_all();
+	} else if (tlb->range_end > 0) {
 		flush_tlb_range(tlb->vma, tlb->range_start, tlb->range_end);
+		if (tlb->vma->vm_flags & VM_EXEC)
+			__flush_icache_all();
 		tlb->range_start = TASK_SIZE;
 		tlb->range_end = 0;
 	}

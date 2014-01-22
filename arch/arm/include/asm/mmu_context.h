@@ -120,7 +120,7 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	unsigned int cpu = smp_processor_id();
 
 	/*
-	 * __sync_icache_dcache doesn't broadcast the I-cache invalidation,
+	 * tlb_flush doesn't broadcast the I-cache invalidation,
 	 * so check for possible thread migration and invalidate the I-cache
 	 * if we're new to this CPU.
 	 */

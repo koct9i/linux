@@ -329,11 +329,7 @@ extern void flush_kernel_dcache_page(struct page *);
 #define flush_icache_user_range(vma,page,addr,len) \
 	flush_dcache_page(page)
 
-/*
- * We don't appear to need to do anything here.  In fact, if we did, we'd
- * duplicate cache flushing elsewhere performed by flush_dcache_page().
- */
-#define flush_icache_page(vma,page)	do { } while (0)
+extern void flush_icache_page(struct vm_area_struct *vma, struct page *page);
 
 /*
  * flush_cache_vmap() is used when creating mappings (eg, via vmap,
