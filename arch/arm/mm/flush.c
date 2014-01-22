@@ -93,6 +93,7 @@ void flush_cache_page(struct vm_area_struct *vma, unsigned long user_addr, unsig
 	if (cache_is_vipt_aliasing()) {
 		flush_pfn_alias(pfn, user_addr);
 		__flush_icache_all();
+		return;
 	}
 
 	if (vma->vm_flags & VM_EXEC && icache_is_vivt_asid_tagged())
