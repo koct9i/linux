@@ -29,14 +29,21 @@
  */
 static int __sync_filesystem(struct super_block *sb, int wait)
 {
+	int ret = 0, ret2;
+
 	if (wait)
 		sync_inodes_sb(sb);
 	else
 		writeback_inodes_sb(sb, WB_REASON_SYNC);
 
 	if (sb->s_op->sync_fs)
-		sb->s_op->sync_fs(sb, wait);
-	return __sync_blockdev(sb->s_bdev, wait);
+		ret = sb->s_op->sync_fs(sb, wait);
+
+	ret2 = __sync_blockdev(sb->s_bdev, wait);
+	if (!ret || ret2 == -EIO)
+		ret = ret2;
+
+	return ret;
 }
 
 /*
@@ -46,7 +53,7 @@ static int __sync_filesystem(struct super_block *sb, int wait)
  */
 int sync_filesystem(struct super_block *sb)
 {
-	int ret;
+	int ret, ret2;
 
 	/*
 	 * We need to be protected against the filesystem going from
@@ -61,9 +68,18 @@ int sync_filesystem(struct super_block *sb)
 		return 0;
 
 	ret = __sync_filesystem(sb, 0);
-	if (ret < 0)
+	/*
+	 * EIO may indicate the worst thing: bug or hardware failure.
+	 * In other cases it's better to wait for partially written data.
+	 */
+	if (ret == -EIO)
 		return ret;
-	return __sync_filesystem(sb, 1);
+
+	ret2 = __sync_filesystem(sb, 1);
+	if (!ret)
+		ret = ret2;
+
+	return ret;
 }
 EXPORT_SYMBOL(sync_filesystem);
 
