@@ -59,15 +59,6 @@ static struct nmi_desc nmi_desc[NMI_MAX] =
 
 };
 
-struct nmi_stats {
-	unsigned int normal;
-	unsigned int unknown;
-	unsigned int external;
-	unsigned int swallow;
-};
-
-static DEFINE_PER_CPU(struct nmi_stats, nmi_stats);
-
 static int ignore_nmis;
 
 int unknown_nmi_panic;
@@ -110,7 +101,7 @@ static void nmi_max_handler(struct irq_work *w)
 		a->handler, whole_msecs, decimal_msecs);
 }
 
-static int nmi_handle(unsigned int type, struct pt_regs *regs, bool b2b)
+static int nmi_handle(unsigned int type, struct pt_regs *regs)
 {
 	struct nmi_desc *desc = nmi_to_desc(type);
 	struct nmiaction *a;
@@ -213,7 +204,7 @@ static void
 pci_serr_error(unsigned char reason, struct pt_regs *regs)
 {
 	/* check to see if anyone registered against these types of errors */
-	if (nmi_handle(NMI_SERR, regs, false))
+	if (nmi_handle(NMI_SERR, regs))
 		return;
 
 	pr_emerg("NMI: PCI system error (SERR) for reason %02x on CPU %d.\n",
@@ -247,7 +238,7 @@ io_check_error(unsigned char reason, struct pt_regs *regs)
 	unsigned long i;
 
 	/* check to see if anyone registered against these types of errors */
-	if (nmi_handle(NMI_IO_CHECK, regs, false))
+	if (nmi_handle(NMI_IO_CHECK, regs))
 		return;
 
 	pr_emerg(
@@ -284,13 +275,9 @@ unknown_nmi_error(unsigned char reason, struct pt_regs *regs)
 	 * as only the first one is ever run (unless it can actually determine
 	 * if it caused the NMI)
 	 */
-	handled = nmi_handle(NMI_UNKNOWN, regs, false);
-	if (handled) {
-		__this_cpu_add(nmi_stats.unknown, handled);
+	handled = nmi_handle(NMI_UNKNOWN, regs);
+	if (handled)
 		return;
-	}
-
-	__this_cpu_add(nmi_stats.unknown, 1);
 
 	pr_emerg("Uhhuh. NMI received for unknown reason %02x on CPU %d.\n",
 		 reason, smp_processor_id());
@@ -303,14 +290,13 @@ unknown_nmi_error(unsigned char reason, struct pt_regs *regs)
 }
 NOKPROBE_SYMBOL(unknown_nmi_error);
 
-static DEFINE_PER_CPU(bool, swallow_nmi);
+static DEFINE_PER_CPU(int, swallow_nmi);
 static DEFINE_PER_CPU(unsigned long, last_nmi_rip);
 
 static void default_do_nmi(struct pt_regs *regs)
 {
 	unsigned char reason = 0;
 	int handled;
-	bool b2b = false;
 
 	/*
 	 * CPU-specific NMI must be processed before non-CPU-specific
@@ -318,22 +304,7 @@ static void default_do_nmi(struct pt_regs *regs)
 	 * NMI can not be detected/processed on other CPUs.
 	 */
 
-	/*
-	 * Back-to-back NMIs are interesting because they can either
-	 * be two NMI or more than two NMIs (any thing over two is dropped
-	 * due to NMI being edge-triggered).  If this is the second half
-	 * of the back-to-back NMI, assume we dropped things and process
-	 * more handlers.  Otherwise reset the 'swallow' NMI behaviour
-	 */
-	if (regs->ip == __this_cpu_read(last_nmi_rip))
-		b2b = true;
-	else
-		__this_cpu_write(swallow_nmi, false);
-
-	__this_cpu_write(last_nmi_rip, regs->ip);
-
-	handled = nmi_handle(NMI_LOCAL, regs, b2b);
-	__this_cpu_add(nmi_stats.normal, handled);
+	handled = nmi_handle(NMI_LOCAL, regs);
 	if (handled) {
 		/*
 		 * There are cases when a NMI handler handles multiple
@@ -343,8 +314,10 @@ static void default_do_nmi(struct pt_regs *regs)
 		 * NMI.  Instead lets flag this for a potential NMI to
 		 * swallow.
 		 */
-		if (handled > 1)
-			__this_cpu_write(swallow_nmi, true);
+		if (handled > 1) {
+			__this_cpu_write(last_nmi_rip, regs->ip);
+			__this_cpu_write(swallow_nmi, handled - 1);
+		}
 		return;
 	}
 
@@ -364,7 +337,6 @@ static void default_do_nmi(struct pt_regs *regs)
 		 */
 		reassert_nmi();
 #endif
-		__this_cpu_add(nmi_stats.external, 1);
 		raw_spin_unlock(&nmi_reason_lock);
 		return;
 	}
@@ -400,10 +372,14 @@ static void default_do_nmi(struct pt_regs *regs)
 	 * 'real' unknown NMI.  But this is the best we can do
 	 * for now.
 	 */
-	if (b2b && __this_cpu_read(swallow_nmi))
-		__this_cpu_add(nmi_stats.swallow, 1);
-	else
-		unknown_nmi_error(reason, regs);
+	if (__this_cpu_read(swallow_nmi) > 0) {
+		__this_cpu_dec(swallow_nmi);
+		if (regs->ip == __this_cpu_read(last_nmi_rip))
+			return;
+		__this_cpu_write(swallow_nmi, 0);
+	}
+
+	unknown_nmi_error(reason, regs);
 }
 NOKPROBE_SYMBOL(default_do_nmi);
 
