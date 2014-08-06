@@ -12,6 +12,7 @@
 #include <linux/blkdev.h>
 #include <linux/bio.h>
 #include <linux/slab.h>
+#include <linux/interval_tree.h>
 
 #define DM_MSG_PREFIX "flakey"
 
@@ -33,10 +34,18 @@ struct flakey_c {
 	unsigned corrupt_bio_rw;
 	unsigned corrupt_bio_value;
 	unsigned corrupt_bio_flags;
+	unsigned block_size;
+	struct rb_root cache_root;
+};
+
+struct flakey_cache {
+	struct interval_tree_node node;
+	char data[0];
 };
 
 enum feature_flag_bits {
-	DROP_WRITES
+	DROP_WRITES,
+	FLAKEY_CACHE,
 };
 
 struct per_bio_data {
@@ -220,6 +229,8 @@ static int flakey_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->num_discard_bios = 1;
 	ti->per_bio_data_size = sizeof(struct per_bio_data);
 	ti->private = fc;
+	fc->block_size = bdev_logical_block_size(fc->dev->bdev);
+	fc->cache_root = RB_ROOT;
 	return 0;
 
 bad:
@@ -271,6 +282,109 @@ static void corrupt_bio_data(struct bio *bio, struct flakey_c *fc)
 	}
 }
 
+static struct flakey_cache *
+flakey_cache_insert(struct flakey_c *fc, sector_t start, sector_t end)
+{
+	struct flakey_cache *cache;
+
+	cache = kmalloc(sizeof(struct flakey_cache) +
+			(end - start + 1) << SECTOR_SHIFT, GFP_NOIO);
+	if (cache) {
+		cache->node.start = start;
+		cache->node.last = end;
+		interval_tree_insert(&cache->node, &fc->cache_root);
+	}
+	return cache;
+}
+
+static void flakey_cache_remove(struct flakey_c *fc, struct flakey_cache *cache)
+{
+	interval_tree_remove(&cache->node, &fc->cache_root);
+	kfree(cache);
+}
+
+static struct flakey_cache *
+flakey_cache_first(struct flakey_c *fc, sector_t start, sector_t end)
+{
+	return container_of(interval_tree_iter_first(&fc->cache_root,
+			start, end), struct flakey_cache, node);
+}
+
+static struct flakey_cache *
+flakey_cache_next(struct flakey_cache *cache, sector_t start, sector_t end)
+{
+	return container_of(interval_tree_iter_next(&cache->node,
+			start, end), struct flakey_cache, node);
+}
+
+static int flakey_cache(struct flakey_c *fc, struct bio *bio)
+{
+	struct bvec_iter iter = bio->bi_iter;
+	struct flakey_cache *cache, *next;
+	struct bio_vec bvec;
+
+	if (bio_rw(bio) & REQ_FLUSH) {
+		cache = flakey_cache_first(fc, 0, -1);
+		while (cache) {
+			struct bio *bio = bio_alloc(GFP_NOIO, 1);
+
+
+			next = flakey_cache_next(cache, 0, -1);
+			flakey_cache_remove(fc, cache);
+			cache = next;
+		}
+	}
+
+	cache = flakey_cache_first(fc, iter.bi_sector, bio_end_sector(bio) - 1);
+
+	if (bio_rw(bio) & REQ_FUA) {
+		WARN_ON(bio_data_dir(bio) != WRITE);
+		while (cache) {
+			next = flakey_cache_next(cache, iter.bi_sector,
+						 bio_end_sector(bio) - 1);
+			flakey_cache_remove(fc, cache);
+			cache = next;
+		}
+		goto bypass;
+	}
+
+	while (iter.bi_size) {
+		if (!cache || cache->node.start > iter.bi_sector) {
+			if (bio_data_dir(bio) == READ) {
+				goto bypass;
+			} else {
+				/* For now each block in separate cache */
+				next = flakey_cache_insert(fc, iter.bi_sector,
+							   iter.bi_sector);
+				if (!next)
+					goto bypass;
+				cache = next;
+			}
+		}
+
+		bvec = bio_iter_iovec(bio, &iter);
+		data = kmap_atomic(bvec->bv_page) + bvec->bv_offset;
+		if (bio_data_dir(bio) == READ)
+			memcpy(data, cache->data, fc->block_size);
+		else
+			memcpy(cache->data, data, fc->block_size);
+		kunmap_atomic(data);
+
+		bio_advance_iter(bio, &iter, fc->block_size);
+		cache = flakey_cache_next(cache, iter.bi_sector,
+					  bio_end_sector(bio) - 1);
+	}
+
+	bio_endio(bio, 0);
+	return DM_MAPIO_SUBMITTED;
+
+bypass:
+	if (cache)
+		dm_accept_partial_bio(bio, iter.bi_sector - cache->node.start);
+	flakey_map_bio(ti, bio);
+	return DM_MAPIO_REMAPPED;
+}
+
 static int flakey_map(struct dm_target *ti, struct bio *bio)
 {
 	struct flakey_c *fc = ti->private;
@@ -316,6 +430,9 @@ static int flakey_map(struct dm_target *ti, struct bio *bio)
 	}
 
 map_bio:
+	if (test_bit(FLAKEY_CACHE, &fc->flags))
+		return flakey_cache(fc, bio);
+
 	flakey_map_bio(ti, bio);
 
 	return DM_MAPIO_REMAPPED;
