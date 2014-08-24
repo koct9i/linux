@@ -220,6 +220,8 @@ VPATH		:= $(srctree)$(if $(KBUILD_EXTMOD),:$(KBUILD_EXTMOD))
 
 export srctree objtree VPATH
 
+KCONFIG_CONFIG	?= .config
+export KCONFIG_CONFIG
 
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
@@ -242,7 +244,14 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 # ARCH can be set during invocation of make:
 # make ARCH=ia64
 # Another way is to have ARCH set in the environment.
-# The default ARCH is the host where make is executed.
+# Usually default value is saved in .config as CONFIG_ARCH.
+# If this option is undefined or config file does not exist
+# ARCH is set to the host where make is executed.
+ifndef ARCH
+	ARCH := $(shell $(srctree)/scripts/config \
+				--file $(KBUILD_OUTPUT)$(KCONFIG_CONFIG) \
+				--if-undef "$(SUBARCH)" --state "ARCH")
+endif
 
 # CROSS_COMPILE specify the prefix used for all executables used
 # during compilation. Only gcc and related bin-utils executables
@@ -254,7 +263,6 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 # "make" in the configured kernel build directory always uses that.
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
-ARCH		?= $(SUBARCH)
 CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
 
 # Architecture as present in compile.h
@@ -292,9 +300,6 @@ endif
 
 # Where to locate arch specific headers
 hdr-arch  := $(SRCARCH)
-
-KCONFIG_CONFIG	?= .config
-export KCONFIG_CONFIG
 
 # SHELL used by kbuild
 CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \

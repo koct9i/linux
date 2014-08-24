@@ -1365,7 +1365,8 @@ The top Makefile exports the following variables:
 	"arm", or "sparc". Some kbuild Makefiles test $(ARCH) to
 	determine which files to compile.
 
-	By default, the top Makefile sets $(ARCH) to be the same as the
+	By default $(ARCH) is set by option CONFIG_ARCH in .config,
+	default for it is set by top Makefile to be the same as the
 	host system architecture.  For a cross build, a user may
 	override the value of $(ARCH) on the command line:
 
