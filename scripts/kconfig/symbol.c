@@ -1350,7 +1350,6 @@ static void prop_add_env(const char *env)
 	char *p;
 
 	sym = current_entry->sym;
-	sym->flags |= SYMBOL_AUTO;
 	for_all_properties(sym, prop, P_ENV) {
 		sym2 = prop_get_symbol(prop);
 		if (strcmp(sym2->name, env))
@@ -1368,6 +1367,4 @@ static void prop_add_env(const char *env)
 	p = getenv(env);
 	if (p)
 		sym_add_default(sym, p);
-	else
-		menu_warn(current_entry, "environment variable %s undefined", env);
 }

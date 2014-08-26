@@ -404,6 +404,30 @@ setsym:
 	return 0;
 }
 
+static void conf_read_env(void)
+{
+	struct symbol *sym, *env_sym;
+	struct property *prop;
+	struct expr *expr;
+	char *value;
+
+	expr_list_for_each_sym(sym_env_list, expr, sym) {
+		prop = sym_get_env_prop(sym);
+		env_sym = prop_get_symbol(prop);
+		value = getenv(env_sym->name);
+		if (value) {
+			sym_calc_value(sym);
+			if (!sym_set_string_value(sym, value))
+				conf_warning("evironment variable %s value "
+					      "'%s' invalid for %s",
+					      env_sym->name, value, sym->name);
+		} else if (!(sym->flags & SYMBOL_DEF_USER))
+			conf_warning("neither symbol %s nor evironment "
+					"variable %s are defined",
+				       sym->name, env_sym->name);
+	}
+}
+
 int conf_read(const char *name)
 {
 	struct symbol *sym;
@@ -413,6 +437,8 @@ int conf_read(const char *name)
 
 	if (conf_read_simple(name, S_DEF_USER))
 		return 1;
+
+	conf_read_env();
 
 	for_all_symbols(i, sym) {
 		sym_calc_value(sym);
