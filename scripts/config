@@ -6,6 +6,9 @@ myname=${0##*/}
 # If no prefix forced, use the default CONFIG_
 CONFIG_="${CONFIG_-CONFIG_}"
 
+# Output for undefined options
+UNDEF="undef"
+
 usage() {
 	cat >&2 <<EOL
 Manipulate options in a .config file from the command line.
@@ -34,6 +37,7 @@ commands:
 options:
 	--file config-file   .config file to change (default .config)
 	--keep-case|-k       Keep next symbols' case (dont' upper-case it)
+	--if-undef string    Print this string instead of state "undef"
 
 $myname doesn't check the validity of the .config file. This is done at next
 make time.
@@ -152,6 +156,11 @@ while [ "$1" != "" ] ; do
 		B=$ARG
 		shift 2
 		;;
+	--if-undef)
+		UNDEF=$1
+		shift
+		continue
+		;;
 	-*)
 		checkarg "$1"
 		shift
@@ -185,12 +194,12 @@ while [ "$1" != "" ] ; do
 		;;
 
 	--state|-s)
-		if grep -q "# ${CONFIG_}$ARG is not set" $FN ; then
+		if grep -sq "# ${CONFIG_}$ARG is not set" $FN ; then
 			echo n
 		else
-			V="$(grep "^${CONFIG_}$ARG=" $FN)"
+			V="$(grep -s "^${CONFIG_}$ARG=" $FN)"
 			if [ $? != 0 ] ; then
-				echo undef
+				echo "${UNDEF}"
 			else
 				V="${V/#${CONFIG_}$ARG=/}"
 				V="${V/#\"/}"
