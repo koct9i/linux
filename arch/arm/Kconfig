@@ -1665,6 +1665,17 @@ config HIGHPTE
 	bool "Allocate 2nd-level pagetables from highmem"
 	depends on HIGHMEM
 
+config MODULES_USE_LONG_CALLS
+	bool "Use long-calls and vmalloc for modules"
+	depends on MMU && MODULES
+	depends on !FUNCTION_TRACER
+	help
+	  By default modules use short-calls which have limited distance.
+	  Kernel loads modules into small area close to the kernel text.
+
+	  This option enables long-calls and moves modules into vmalloc area
+	  which is much bigger.
+
 config HW_PERF_EVENTS
 	bool "Enable hardware performance counter support for perf events"
 	depends on PERF_EVENTS

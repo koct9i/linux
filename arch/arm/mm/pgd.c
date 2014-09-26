@@ -53,17 +53,22 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	clean_dcache_area(new_pgd, PTRS_PER_PGD * sizeof(pgd_t));
 
 #ifdef CONFIG_ARM_LPAE
+#if defined(CONFIG_HIGHMEM) || !defined(CONFIG_MODULES_USE_LONG_CALLS)
 	/*
 	 * Allocate PMD table for modules and pkmap mappings.
 	 */
-	new_pud = pud_alloc(mm, new_pgd + pgd_index(MODULES_VADDR),
-			    MODULES_VADDR);
+	new_pud = pud_alloc(mm, new_pgd + pgd_index(TASK_SIZE),
+			    TASK_SIZE);
 	if (!new_pud)
 		goto no_pud;
 
 	new_pmd = pmd_alloc(mm, new_pud, 0);
 	if (!new_pmd)
 		goto no_pmd;
+#else
+	new_pud = NULL;
+	new_pmd = NULL;
+#endif
 #endif
 
 	if (!vectors_high()) {
