@@ -484,6 +484,7 @@ struct thread_struct {
 #endif
 #ifdef CONFIG_X86_64
 	unsigned long		fs;
+	unsigned long		gs_cpu_stride;
 #endif
 	unsigned long		gs;
 	/* Save middle states of ptrace breakpoints */

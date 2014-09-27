@@ -5,5 +5,7 @@
 #define ARCH_SET_FS 0x1002
 #define ARCH_GET_FS 0x1003
 #define ARCH_GET_GS 0x1004
+#define ARCH_SET_GS_PERCPU 0x1005
+#define ARCH_GET_GS_PERCPU 0x1006
 
 #endif /* _ASM_X86_PRCTL_H */

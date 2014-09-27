@@ -351,7 +351,8 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			prev->gs = 0;
 	}
 	if (next->gs)
-		wrmsrl(MSR_KERNEL_GS_BASE, next->gs);
+		wrmsrl(MSR_KERNEL_GS_BASE, next->gs +
+				cpu * next->gs_cpu_stride);
 	prev->gsindex = gsindex;
 
 	switch_fpu_finish(next_p, fpu);
@@ -469,6 +470,7 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		if (addr >= TASK_SIZE_OF(task))
 			return -EPERM;
 		cpu = get_cpu();
+		task->thread.gs_cpu_stride = 0;
 		/* handle small bases via the GDT because that's faster to
 		   switch. */
 		if (addr <= 0xffffffff) {
@@ -542,6 +544,41 @@ long do_arch_prctl(struct task_struct *task, int code, unsigned long addr)
 		} else
 			base = task->thread.gs;
 		ret = put_user(base, (unsigned long __user *)addr);
+		break;
+	}
+	case ARCH_GET_GS_PERCPU:
+		if (test_tsk_thread_flag(task, TIF_ADDR32))
+			return -EINVAL;
+		if (!task->thread.gs || !task->thread.gs_cpu_stride)
+			return -ENOENT;
+		ret = put_user(task->thread.gs,
+				(unsigned long __user *)addr);
+		if (!ret)
+			ret = put_user(task->thread.gs_cpu_stride,
+					((unsigned long __user *)addr) + 1);
+		break;
+	case ARCH_SET_GS_PERCPU: {
+		unsigned long arg[2];
+
+		if (test_tsk_thread_flag(task, TIF_ADDR32))
+			return -EINVAL;
+		if (copy_from_user(arg, (void __user *)addr, sizeof(arg)))
+			return -EFAULT;
+		if (arg[0] >= TASK_SIZE_MAX)
+			return -EPERM;
+		if (arg[1] > (TASK_SIZE_MAX - arg[0]) / num_possible_cpus())
+			return -EOVERFLOW;
+
+		task->thread.gsindex = 0;
+		task->thread.gs = arg[0];
+		task->thread.gs_cpu_stride = arg[1];
+		if (doit) {
+			cpu = get_cpu();
+			load_gs_index(0);
+			ret = wrmsrl_safe(MSR_KERNEL_GS_BASE,
+					  arg[0] + cpu * arg[1]);
+			put_cpu();
+		}
 		break;
 	}
 
