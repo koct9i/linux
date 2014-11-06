@@ -2286,7 +2286,7 @@ out_free_sha_regions:
 out_free_desc:
 	kfree(desc);
 out_free_tfm:
-	kfree(tfm);
+	crypto_free_shash(tfm);
 out:
 	return ret;
 }
