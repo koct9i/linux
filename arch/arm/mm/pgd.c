@@ -20,15 +20,19 @@
 #include "mm.h"
 
 #ifdef CONFIG_ARM_LPAE
+#define TTBR0_PTRS_PER_PGD	PTRS_PER_PGD
 #define __pgd_alloc()	kmalloc(PTRS_PER_PGD * sizeof(pgd_t), GFP_KERNEL)
 #define __pgd_free(pgd)	kfree(pgd)
 #else
-#define __pgd_alloc()	(pgd_t *)__get_free_pages(GFP_KERNEL | __GFP_REPEAT, 2)
-#define __pgd_free(pgd)	free_pages((unsigned long)pgd, 2)
+#define TTBR0_PTRS_PER_PGD	(PTRS_PER_PGD >> TTBR1_SIZE)
+#define __pgd_alloc()	(pgd_t *)__get_free_pages(GFP_KERNEL | __GFP_REPEAT, \
+							2 - TTBR1_SIZE)
+#define __pgd_free(pgd)	free_pages((unsigned long)pgd, 2 - TTBR1_SIZE)
 #endif
 
 /*
- * need to get a 16k page for level 1
+ * We need 4k/8k/16k for pgd in short mode for CONFIG_VMSPLIT_1G/2G/3G
+ * or only 64 bytes if LPAE is enabled.
  */
 pgd_t *pgd_alloc(struct mm_struct *mm)
 {
@@ -48,9 +52,9 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	 */
 	init_pgd = pgd_offset_k(0);
 	memcpy(new_pgd + USER_PTRS_PER_PGD, init_pgd + USER_PTRS_PER_PGD,
-		       (PTRS_PER_PGD - USER_PTRS_PER_PGD) * sizeof(pgd_t));
+		(TTBR0_PTRS_PER_PGD - USER_PTRS_PER_PGD) * sizeof(pgd_t));
 
-	clean_dcache_area(new_pgd, PTRS_PER_PGD * sizeof(pgd_t));
+	clean_dcache_area(new_pgd, TTBR0_PTRS_PER_PGD * sizeof(pgd_t));
 
 #ifdef CONFIG_ARM_LPAE
 	/*

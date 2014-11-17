@@ -100,7 +100,13 @@ extern char  __idmap_text_start[], __idmap_text_end[];
 
 static int __init init_static_idmap(void)
 {
+#ifdef CONFIG_ARM_LPAE
 	idmap_pgd = pgd_alloc(&init_mm);
+#else
+	idmap_pgd = (pgd_t *)__get_free_pages(GFP_KERNEL, 2);
+	if (idmap_pgd)
+		memcpy(idmap_pgd, swapper_pg_dir, PTRS_PER_PGD * sizeof(pgd_t));
+#endif
 	if (!idmap_pgd)
 		return -ENOMEM;
 
