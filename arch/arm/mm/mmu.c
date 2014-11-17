@@ -1161,16 +1161,15 @@ void __init sanity_check_meminfo(void)
 
 static inline void prepare_page_table(void)
 {
-	unsigned long addr;
+	unsigned long addr = 0;
 	phys_addr_t end;
 
 	/*
 	 * Clear out all the mappings below the kernel image.
 	 */
-	for (addr = 0; addr < MODULES_VADDR; addr += PMD_SIZE)
-		pmd_clear(pmd_off_k(addr));
-
 #ifdef CONFIG_XIP_KERNEL
+	for ( ; addr < MODULES_VADDR; addr += PMD_SIZE)
+		pmd_clear(pmd_off_k(addr));
 	/* The XIP kernel is mapped in the module area -- skip over it */
 	addr = ((unsigned long)_etext + PMD_SIZE - 1) & PMD_MASK;
 #endif
