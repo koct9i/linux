@@ -90,6 +90,19 @@
 
 #define PHYS_MASK		(~0UL)
 
+/*
+ * TTBR0/TTBR1 split (PAGE_OFFSET):
+ *   0x40000000: TTBCR.N = 2
+ *   0x80000000: TTBCR.N = 1
+ *   0xc0000000: TTBCR.N = 0 (not used)
+ */
+
+#ifdef CONFIG_VMSPLIT_1G
+#define TTBR1_SIZE	2
+#elif defined CONFIG_VMSPLIT_2G
+#define TTBR1_SIZE	1
+#elif defined CONFIG_VMSPLIT_3G
 #define TTBR1_SIZE	0
+#endif
 
 #endif
