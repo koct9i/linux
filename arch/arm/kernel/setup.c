@@ -488,6 +488,17 @@ void notrace cpu_init(void)
 	      PLC (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
 	    : "r14");
 #endif
+
+#ifdef CONFIG_ARM_LPAE
+	/* For short mode TTBR1 already loaded by macro v7_ttb_setup */
+	cpu_set_ttbr(1, __pa(init_mm.pgd) + TTBR1_OFFSET);
+#endif
+
+#if defined(CONFIG_MMU) && TTBR1_SIZE
+	/* Enable TTBR0/TTBR1 split */
+	cpu_set_ttbcr(cpu_get_ttbcr() | TTBR1_SIZE);
+	local_flush_tlb_all();
+#endif
 }
 
 u32 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = MPIDR_INVALID };

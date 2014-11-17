@@ -89,19 +89,17 @@
  *   0x40000000: T0SZ = 2, T1SZ = 0 (not used)
  *   0x80000000: T0SZ = 0, T1SZ = 1
  *   0xc0000000: T0SZ = 0, T1SZ = 2
- *
- * Only use this feature if PHYS_OFFSET <= PAGE_OFFSET, otherwise
- * booting secondary CPUs would end up using TTBR1 for the identity
- * mapping set up in TTBR0.
  */
 #if defined CONFIG_VMSPLIT_2G
 #define TTBR1_OFFSET	16			/* skip two L1 entries */
+#define TTBR1_SIZE	(1<<16)
 #elif defined CONFIG_VMSPLIT_3G
 #define TTBR1_OFFSET	(4096 * (1 + 3))	/* only L2, skip pgd + 3*pmd */
+#define TTBR1_SIZE	(2<<16)
 #else
-#define TTBR1_OFFSET	0
+#define TTBR1_OFFSET	8			/* skip one L1 entry */
+/* Not implemented. In this mode TTBR0 points to first pmd instead of pgd. */
+#define TTBR1_SIZE	0
 #endif
-
-#define TTBR1_SIZE	(((PAGE_OFFSET >> 30) - 1) << 16)
 
 #endif

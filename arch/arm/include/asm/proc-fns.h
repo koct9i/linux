@@ -149,6 +149,19 @@ extern void cpu_resume(void);
 	})
 #endif
 
+static inline u32 cpu_get_ttbcr(void)
+{
+	u32 val;
+
+	__asm__("mrc p15, 0, %0, c2, c0, 2" : "=r" (val));
+	return val;
+}
+
+static inline void cpu_set_ttbcr(u32 val)
+{
+	__asm__("mcr p15, 0, %0, c2, c0, 2" : : "r" (val));
+}
+
 #else	/*!CONFIG_MMU */
 
 #define cpu_switch_mm(pgd,mm)	{ }

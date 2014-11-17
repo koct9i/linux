@@ -90,4 +90,6 @@
 
 #define PHYS_MASK		(~0UL)
 
+#define TTBR1_SIZE	0
+
 #endif

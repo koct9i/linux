@@ -123,6 +123,12 @@ void setup_mm_for_reboot(void)
 {
 	/* Switch to the identity mapping. */
 	cpu_switch_mm(idmap_pgd, &init_mm);
+
+#if TTBR1_SIZE
+	/* Disable TTBR0/TTBR1 split, idmap might collide with TTRB1 range */
+	cpu_set_ttbcr(cpu_get_ttbcr() | ~TTBR1_SIZE);
+#endif
+
 	local_flush_bp_all();
 
 #ifdef CONFIG_CPU_HAS_ASID
