@@ -1075,9 +1075,13 @@ phys_addr_t arm_lowmem_limit __initdata = 0;
 void __init sanity_check_meminfo(void)
 {
 	phys_addr_t memblock_limit = 0;
+	phys_addr_t vmalloc_limit = -1;
 	int highmem = 0;
-	phys_addr_t vmalloc_limit = __pa(vmalloc_min - 1) + 1;
 	struct memblock_region *reg;
+
+	if ((unsigned long)vmalloc_min - PAGE_OFFSET <
+			vmalloc_limit - PHYS_OFFSET)
+		vmalloc_limit = __pa(vmalloc_min - 1) + 1;
 
 	for_each_memblock(memory, reg) {
 		phys_addr_t block_start = reg->base;
