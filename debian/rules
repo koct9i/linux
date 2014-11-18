@@ -1,0 +1,140 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+PKGVER=$(shell head -n1 debian/changelog | cut -d " " -f 2 | sed -e "s/(//" | sed -e "s/)//")
+DEBKVER=$(shell echo $(PKGVER) | cut -d "-" -f 1)
+EXTRAVERSION=$(shell head -n1 debian/changelog | cut -d " " -f 2 | sed -e "s/(//" | sed -e "s/)//" | sed -e "s/\(.*\)-\(.*\)/\2/")
+NRCPUS=$(shell grep -c "processor.*:" /proc/cpuinfo)
+
+pkgdir=$(CURDIR)/debian/linux-image-$(PKGVER)
+dbgpkgdir=$(CURDIR)/debian/linux-image-$(PKGVER)-dbgsym
+
+build:
+	sed -i -e "s/echo \"+\"//" scripts/setlocalversion
+	cp -f $(CURDIR)/debian/configs/config .config
+	make oldconfig
+	make -j $(NRCPUS) EXTRAVERSION="-$(EXTRAVERSION)" bzImage
+	make -j $(NRCPUS) EXTRAVERSION="-$(EXTRAVERSION)" modules
+	make -j $(NRCPUS) -s WERROR=0 V=1 NO_LIBNUMA=1 NO_DEMANGLE=1 NO_GTK2=1 NO_LIBAUDIT=1 NO_LIBUNWIND=1 -C tools/perf perf
+	make -j $(NRCPUS) -C tools turbostat
+	make -j $(NRCPUS) -C tools x86_energy_perf_policy
+
+	# make sure kernel version and version in debian changelog match
+	kver="$$(cat include/config/kernel.release | cut -d'-' -f1)"; \
+	if [ "$$kver" != "$(DEBKVER)" ]; then \
+		echo "ERROR: Wrong kernel version in debian changelog:" \
+		"$$kver != $(DEBKVER)"; \
+		exit 1; \
+	fi
+
+build-arch:
+	#Nothing to do
+
+
+build-indep:
+	#Nothing to do
+
+
+install:
+	dh_testdir
+	dh_testroot
+	dh_prep
+	#-------------------- kernel and modules install --------------------#
+	install -d -m755 $(CURDIR)/debian/linux-image-$(PKGVER)/boot
+	install -m644 arch/x86/boot/bzImage $(CURDIR)/debian/linux-image-$(PKGVER)/boot/vmlinuz-$(PKGVER)
+	install -m644 .config $(CURDIR)/debian/linux-image-$(PKGVER)/boot/config-$(PKGVER)
+	install -m644 System.map $(CURDIR)/debian/linux-image-$(PKGVER)/boot/System.map-$(PKGVER)
+	make modules_install KBUILD_SRC= INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=$(CURDIR)/debian/linux-image-$(PKGVER) mod-fw=
+	# build and source in linux-headers package
+	rm -f $(CURDIR)/debian/linux-image-$(PKGVER)/lib/modules/$(PKGVER)/build
+	rm -f $(CURDIR)/debian/linux-image-$(PKGVER)/lib/modules/$(PKGVER)/source
+	#-------------------- end of kernel and modules install --------------------#
+	#-------------------- debug kernel and modules install --------------------#
+	install -m755 -D vmlinux $(dbgpkgdir)/usr/lib/debug/boot/vmlinux-$(PKGVER)
+	make modules_install KBUILD_SRC= INSTALL_MOD_PATH=$(dbgpkgdir)/usr/lib/debug mod-fw=
+	# Add .gnu_debuglink sections to each stripped .ko
+	# pointing to unstripped verson
+	find $(pkgdir) -name '*.ko' | sed 's|$(pkgdir)||' | while read module ; do \
+		objcopy --add-gnu-debuglink=$(dbgpkgdir)/usr/lib/debug/$$module $(pkgdir)/$$module; \
+	done
+	rm -f $(dbgpkgdir)/usr/lib/debug/lib/modules/$(PKGVER)/build
+	rm -f $(dbgpkgdir)/usr/lib/debug/lib/modules/$(PKGVER)/source
+	rm -f $(dbgpkgdir)/usr/lib/debug/lib/modules/$(PKGVER)/modules.*
+	rm -fr $(dbgpkgdir)/usr/lib/debug/lib/firmware
+	#-------------------- end of debug kernel and modules install --------------------#
+	#-------------------- tools install --------------------#
+	install -d -m755 $(CURDIR)/debian/linux-tools/usr/bin
+	install -m755 tools/perf/perf $(CURDIR)/debian/linux-tools/usr/bin/perf
+	install -m755 tools/kexec/kexec-reboot $(CURDIR)/debian/linux-tools/usr/bin/kexec-reboot
+	install -m755 tools/turbostat $(CURDIR)/debian/linux-tools/usr/bin/turbostat
+	install -m755 tools/power/x86/x86_energy_perf_policy/x86_energy_perf_policy \
+		$(CURDIR)/debian/linux-tools/usr/bin/x86_energy_perf_policy
+	install -d -m755 $(CURDIR)/debian/linux-tools/usr/share/perf/scripts
+	cp -a tools/perf/scripts $(CURDIR)/debian/linux-tools/usr/share/perf/
+	#-------------------- end of tools install --------------------#
+	#-------------------- headers install --------------------#
+	make headers_check KBUILD_SRC=
+	make headers_install KBUILD_SRC= INSTALL_HDR_PATH=$(CURDIR)/debian/linux-libc-dev/usr
+	#-------------------- end of headers install --------------------#
+	#-------------------- sources install --------------------#
+	install -d -m755 $(CURDIR)/debian/linux-headers-$(PKGVER)/lib/modules/$(PKGVER)
+	install -d -m755 $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)
+	cp --parents `find -type f -name "Makefile*" -o -name "Kconfig*"` $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp Module.symvers $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp System.map $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp .config $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp -a scripts $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp -a --parents arch/x86/include $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/
+	cp -a include $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/include
+	# Copy .config to include/config/auto.conf so "make prepare" is unnecessary.
+	cp $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/.config \
+		$(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/include/config/auto.conf
+	ln -sf /usr/src/linux-headers-$(PKGVER) "$(CURDIR)/debian/linux-headers-$(PKGVER)/lib/modules/$(PKGVER)/build"
+	find $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/linux-headers-$(PKGVER)/scripts/ -type f |grep -E "*\.pl|*\.sh" |xargs chmod +x 
+	find $(CURDIR)/debian/linux-headers-$(PKGVER)/usr/src/ -type d | grep "\.git" | xargs rm -rf
+	#-------------------- end of sources install --------------------#
+	#-------------------- hack for brain damaged DEBian packaging system --------------------#
+	cp debian/control.in debian/control
+	sed -i -e "s/PKGVER/$(PKGVER)/g" debian/control
+	cp debian/linux-image.preinst.in debian/linux-image-$(PKGVER).preinst
+	cp debian/linux-image.postinst.in debian/linux-image-$(PKGVER).postinst
+	cp debian/linux-image.prerm.in debian/linux-image-$(PKGVER).prerm
+	cp debian/linux-image.postrm.in debian/linux-image-$(PKGVER).postrm
+	sed -i -e "s/PKGVER/$(PKGVER)/g" debian/linux-image-$(PKGVER).preinst
+	sed -i -e "s/PKGVER/$(PKGVER)/g" debian/linux-image-$(PKGVER).postinst
+	sed -i -e "s/PKGVER/$(PKGVER)/g" debian/linux-image-$(PKGVER).prerm
+	sed -i -e "s/PKGVER/$(PKGVER)/g" debian/linux-image-$(PKGVER).postrm
+	#-------------------- end of hack for brain damaged DEBian packaging system --------------------#
+	dh_install --list-missing 
+	dh_link
+
+binary-indep: install
+	#Nothing to do
+
+
+binary-arch: install
+	dh_testdir
+	dh_testroot
+	dh_installdirs
+	dh_installdocs
+	dh_installcron
+	dh_installchangelogs
+	dh_installlogrotate
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_gencontrol
+	dh_builddeb
+
+
+binary: binary-arch binary-indep
+
+	
+clean:
+	make clean
+	dh_clean
+	rm -rf debian/linux-image-*
+	rm -rf debian/linux-headers-*
+	cp -f debian/control.in debian/control

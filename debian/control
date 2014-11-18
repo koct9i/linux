@@ -1,0 +1,117 @@
+Source: linux-yandex
+Section: devel
+Priority: optional
+Maintainer: Boris B. Zhmurov <zhmurov@yandex-team.ru>
+Build-Depends: debhelper (>= 5), cpio, module-init-tools, kernel-wedge (>= 2.24), makedumpfile [amd64 i386], libelf-dev, binutils-dev, rsync, libdw-dev, dpkg (>= 1.16.0), util-linux (>= 2.0), bc, bison, libnewt-dev, flex
+Build-Depends-Indep: xmlto, docbook-utils, ghostscript, transfig, bzip2, sharutils, asciidoc
+Standards-Version: 3.9.3
+Homepage: http://www.yandex.ru
+
+
+Package: linux-headers-PKGVER
+Architecture: i386 amd64
+Section: devel
+Priority: optional
+Depends: ${misc:Depends}, coreutils (>= 8.0) | fileutils (>= 4.0), libc6
+Provides: linux-headers, linux-headers-3
+Description: Header files related to Linux kernel version PKGVER
+ This package provides kernel header files for version PKGVER, for sites
+ that want the latest kernel headers. Please read
+ /usr/share/doc/linux-headers-PKGVER/debian.README.gz for details
+
+
+Package: linux-libc-dev
+Architecture: i386 amd64 
+Depends: ${misc:Depends}
+Replaces: linux-kernel-headers, libdrm-dev
+Provides: linux-kernel-headers
+Multi-Arch: same
+Description: Linux Kernel Headers for development
+ This package provides headers from the Linux kernel.  These headers
+ are used by the installed headers for GNU glibc and other system
+ libraries. They are NOT meant to be used to build third-party modules for
+ your kernel. Use linux-headers-* packages for that.
+
+
+Package: linux-tools
+Architecture: i386 amd64
+Section: devel
+Priority: optional
+Depends: ${misc:Depends}, libc6, kexec-tools, linux-image-PKGVER
+Description: Linux kernel version specific tools for version PKGVER
+ This package provides the architecture dependant parts for kernel
+ version locked tools (such as perf and x86_energy_perf_policy) for
+ version PKGVER on 64 bit x86.
+
+
+Package: linux-image-PKGVER
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Pre-Depends: dpkg (>= 1.10.24)
+Provides: linux-image, linux-image-3.0, fuse-module, kvm-api-4, redhat-cluster-modules, ivtv-modules, ndiswrapper-modules-1.9
+Depends: ${misc:Depends}, initramfs-tools (>= 0.36), module-init-tools (>= 3.3-pre11-4), crda (>=1.1.1-1) | wireless-crda, linux-firmware (>= 20130407)
+Recommends: grub-pc | grub-efi-amd64 | grub-efi-ia32 | grub | lilo (>= 19.1)
+Suggests: fdutils, linux-tools
+Description: Linux kernel image for version PKGVER on 64 bit x86 SMP
+ This package contains the Linux kernel image for version PKGVER on
+ 64 bit x86 SMP.
+ .
+ Also includes the corresponding System.map file, the modules built by the
+ packager, and scripts that try to ensure that the system is not left in an
+ unbootable state after an update.
+ .
+ Supports Generic processors.
+ .
+ Geared toward desktop and server systems.
+
+Package: linux-image-PKGVER-dbgsym
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Depends: ${misc:Depends}, linux-image-PKGVER
+Description: Linux kernel debug image for version PKGVER on 64 bit x86 SMP
+ This package provides a kernel debug image for version PKGVER on
+ 64 bit x86 SMP.
+ .
+ This is for sites that wish to debug the kernel.
+ .
+ The kernel image contained in this package is NOT meant to boot from. It
+ is uncompressed, and unstripped. This package also includes the
+ unstripped modules.
+
+Package: linux-image-generic
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware
+Description: Generic Linux kernel image
+ This package will always depend on the latest generic kernel image
+ available.
+
+Package: linux-image-server
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware, linux-tools (>= PKGVER), linux-headers-PKGVER
+Description: Server Linux kernel image
+ This package will always depend on the latest generic kernel image
+ available.
+
+Package: linux-image-virtual
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware
+Description: Virtual Linux kernel image
+ This package will always depend on the latest generic kernel image
+ available.
+
+Package: linux-virtual
+Architecture: i386 amd64
+Section: kernel
+Priority: optional
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-headers-PKGVER, linux-firmware
+Description: Package for linux images for virtualization
+ This package will always depend on the latest generic kernel image
+ available.
