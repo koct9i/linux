@@ -683,7 +683,7 @@ retry:
 		 * full.
 		 */
 		if (entropy_bits > random_write_wakeup_bits &&
-		    r->initialized &&
+		    system_wq && r->initialized &&
 		    r->entropy_total >= 2*random_read_wakeup_bits) {
 			static struct entropy_store *last = &blocking_pool;
 			struct entropy_store *other = &blocking_pool;
@@ -695,7 +695,7 @@ retry:
 				last = other;
 			if (last->entropy_count <=
 			    3 * last->poolinfo->poolfracbits / 4) {
-				schedule_work(&last->push_work);
+				queue_work(system_wq, &last->push_work);
 				r->entropy_total = 0;
 			}
 		}
