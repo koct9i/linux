@@ -68,6 +68,8 @@ struct kmem_cache {
 	 * variables contain the offset to the user object and its size.
 	 */
 	int obj_offset;
+
+	struct array_cache __percpu *cpu_quarantine;
 #endif /* CONFIG_DEBUG_SLAB */
 #ifdef CONFIG_MEMCG_KMEM
 	struct memcg_cache_params *memcg_params;

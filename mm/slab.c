@@ -917,6 +917,11 @@ static void __drain_alien_cache(struct kmem_cache *cachep,
 {
 	struct kmem_cache_node *n = get_node(cachep, node);
 
+	if (cachep->flags & SLAB_QUARANTINE) {
+		__flush_quarantine(cachep, n, ac->entry, ac->avail);
+		ac->avail = 0;
+	}
+
 	if (ac->avail) {
 		spin_lock(&n->list_lock);
 		/*
@@ -2182,6 +2187,9 @@ __kmem_cache_create (struct kmem_cache *cachep, unsigned long flags)
 		size = PAGE_SIZE;
 	}
 #endif
+
+	if (__do_tune_quarantine(cachep, 1, 1))
+		return -ENOMEM;
 #endif
 
 	/*
@@ -2410,6 +2418,7 @@ int __kmem_cache_shutdown(struct kmem_cache *cachep)
 		return rc;
 
 	free_percpu(cachep->cpu_cache);
+	free_percpu(cachep->cpu_quarantine);
 
 	/* NUMA: free the node structures */
 	for_each_kmem_cache_node(cachep, i, n) {
@@ -2658,6 +2667,98 @@ failed:
 
 #if DEBUG
 
+
+static void __flush_quarantine(struct kmem_cache *cache,
+			       struct kmem_cache_node *n,
+			       void **objpp, int nr_objects)
+{
+	int i;
+
+	spin_lock(&n->list_lock);
+	for (i = 0; i < nr_objects; i++) {
+		void *objp = objdpp[i];
+		struct page *page = virt_to_head_page(objp);
+		int quarantined = get_free_obj(page, 0) + 1;
+
+		n->quaranine.nr_objects++;
+		if (quarantined == cache->num) {
+			BUG_ON(page->active);
+			n->quarantine.nr_slabs++;
+			list_move(&page->lru, &n->quarantine.slabs);
+		} else {
+			set_free_obj(page, 0, quarantined);
+		}
+	}
+	spin_unlock(&n->list_lock);
+}
+
+static void flush_quarantine(struct kmem_cache *cache, struct array_cache *ac)
+{
+	int i, batchcount = ac->batchcount;
+	struct kmem_cache_node *n = get_node(cachep, numa_mem_id());
+
+	if (nr_online_nodes == 1) {
+		__flush_quarantine(cache, n, ac->entry, ac->avail);
+		ac->avail = 0;
+		return;
+	}
+
+	for (i = 0; i < ac->batchcount; i++) {
+		void *objp = ac->entry[i];
+		struct page *page = virt_to_head_page(objp);
+		int page_node = page_to_nid(page);
+
+		if (n->alien && n->alien[page_node]) {
+			struct alien_cache *alien = n->alien[page_node];
+			struct array_cache *ac = &alien->ac;
+
+			spin_lock(&alien->lock);
+			if (unlikely(ac->avail == ac->limit)) {
+				__flush_quarantine(cache, page_node,
+						   ac->entry, ac->avail);
+				ac->avail = 0;
+			}
+			ac_put_obj(cachep, ac, objp);
+			spin_unlock(&alien->lock);
+		} else {
+			__flush_quarantine(cache, page_node, &objp, 1);
+		}
+	}
+	ac->avail -= batchcount;
+	memmove(ac->entry, &(ac->entry[batchcount]), sizeof(void *)*ac->avail);
+}
+
+static int __do_tune_quarantine(struct kmem_cache *cachep,
+				int limit, int batchcount)
+{
+	struct array_cache __percpu *cpu_quarantine, *prev;
+
+	if (!(cachep->flags & SLAB_QUARANTINE))
+		return 0;
+
+	cpu_quarantine = alloc_kmem_cache_cpus(cachep, limit, batchcount);
+	if (!cpu_quarantine)
+		return -ENOMEM;
+
+	prev = cachep->cpu_quarantine;
+	cachep->cpu_quarantine = cpu_quarantine;
+	kick_all_cpus_sync();
+
+	if (prev) {
+		int cpu;
+
+		for_each_online_cpu(cpu) {
+			struct array_cache *ac = per_cpu_ptr(prev, cpu);
+
+			ac->batchcount = ac->avail;
+			flush_quarantine(cache, ac);
+		}
+		free_percpu(prev);
+	}
+
+	return 0;
+}
+
 /*
  * Perform extra freeing checks:
  * - detect bad pointers.
@@ -2733,6 +2834,16 @@ static void *cache_free_debugcheck(struct kmem_cache *cachep, void *objp,
 		poison_obj(cachep, objp, POISON_FREE);
 #endif
 	}
+
+	if (cachep->flags & SLAB_QUARANTINE) {
+		struct array_cache *ac = this_cpu_ptr(cachep->cpu_quarantine);
+
+		if (ac->avail == ac->limit)
+			flush_quarantine(cachep, ac);
+		ac->entry[ac->avail++] = objp;
+		objp = NULL;
+	}
+
 	return objp;
 }
 
@@ -3354,6 +3465,8 @@ static inline void __cache_free(struct kmem_cache *cachep, void *objp,
 	check_irq_off();
 	kmemleak_free_recursive(objp, cachep->flags);
 	objp = cache_free_debugcheck(cachep, objp, caller);
+	if (unlikely(!objp))
+		return;
 
 	kmemcheck_slab_free(cachep, objp, cachep->object_size);
 
@@ -3663,6 +3776,9 @@ static int __do_tune_cpucache(struct kmem_cache *cachep, int limit,
 {
 	struct array_cache __percpu *cpu_cache, *prev;
 	int cpu;
+
+	if (__do_tune_quarantine(cachep, limit,batchcount))
+		return -ENOMEM;
 
 	cpu_cache = alloc_kmem_cache_cpus(cachep, limit, batchcount);
 	if (!cpu_cache)

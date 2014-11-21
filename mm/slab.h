@@ -337,13 +337,15 @@ struct kmem_cache_node {
 	atomic_long_t nr_slabs;
 	atomic_long_t total_objects;
 	struct list_head full;
+#endif
+#endif
 
+#if defined(CONFIG_SLUB_DEBUG) || defined(CONFIG_SLAB_DEBUG)
 	struct {
 		unsigned long nr_objects;
 		unsigned long nr_slabs;
 		struct list_head slabs;
 	} quarantine;
-#endif
 #endif
 
 };
