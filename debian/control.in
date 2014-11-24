@@ -50,7 +50,7 @@ Section: kernel
 Priority: optional
 Pre-Depends: dpkg (>= 1.10.24)
 Provides: linux-image, linux-image-3.0, fuse-module, kvm-api-4, redhat-cluster-modules, ivtv-modules, ndiswrapper-modules-1.9
-Depends: ${misc:Depends}, initramfs-tools (>= 0.36), module-init-tools (>= 3.3-pre11-4), crda (>=1.1.1-1) | wireless-crda, linux-firmware (>= 20130407)
+Depends: ${misc:Depends}, initramfs-tools (>= 0.36), module-init-tools (>= 3.3-pre11-4), crda (>=1.1.1-1) | wireless-crda, linux-firmware (>= 20141009)
 Recommends: grub-pc | grub-efi-amd64 | grub-efi-ia32 | grub | lilo (>= 19.1)
 Suggests: fdutils, linux-tools
 Description: Linux kernel image for version PKGVER on 64 bit x86 SMP
@@ -84,7 +84,7 @@ Package: linux-image-generic
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware (>= 20141009)
 Description: Generic Linux kernel image
  This package will always depend on the latest generic kernel image
  available.
@@ -93,7 +93,7 @@ Package: linux-image-server
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware, linux-tools (>= PKGVER), linux-headers-PKGVER
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware (>= 20141009), linux-tools (>= PKGVER), linux-headers-PKGVER
 Description: Server Linux kernel image
  This package will always depend on the latest generic kernel image
  available.
@@ -102,7 +102,7 @@ Package: linux-image-virtual
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-firmware (>= 20141009)
 Description: Virtual Linux kernel image
  This package will always depend on the latest generic kernel image
  available.
@@ -111,7 +111,7 @@ Package: linux-virtual
 Architecture: i386 amd64
 Section: kernel
 Priority: optional
-Depends: ${misc:Depends}, linux-image-PKGVER, linux-headers-PKGVER, linux-firmware
+Depends: ${misc:Depends}, linux-image-PKGVER, linux-headers-PKGVER, linux-firmware (>= 20141009)
 Description: Package for linux images for virtualization
  This package will always depend on the latest generic kernel image
  available.
