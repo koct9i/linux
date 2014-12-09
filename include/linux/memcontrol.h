@@ -75,6 +75,7 @@ bool task_in_mem_cgroup(struct task_struct *task,
 
 extern struct mem_cgroup *try_get_mem_cgroup_from_page(struct page *page);
 extern struct mem_cgroup *mem_cgroup_from_task(struct task_struct *p);
+extern bool page_cgroup_match_current(struct page *page);
 
 extern struct mem_cgroup *parent_mem_cgroup(struct mem_cgroup *memcg);
 extern struct mem_cgroup *mem_cgroup_from_css(struct cgroup_subsys_state *css);
@@ -229,6 +230,11 @@ static inline struct lruvec *mem_cgroup_page_lruvec(struct page *page,
 static inline struct mem_cgroup *try_get_mem_cgroup_from_page(struct page *page)
 {
 	return NULL;
+}
+
+static inline bool page_cgroup_match_current(struct page *page)
+{
+	return true;
 }
 
 static inline bool mm_match_cgroup(struct mm_struct *mm,

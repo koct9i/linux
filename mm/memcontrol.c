@@ -2720,6 +2720,21 @@ static void unlock_page_lru(struct page *page, int isolated)
 	spin_unlock_irq(&zone->lru_lock);
 }
 
+bool page_cgroup_match_current(struct page *page)
+{
+	struct page_cgroup *pc;
+	struct mem_cgroup *memcg = mem_cgroup_from_task(current);
+	struct mem_cgroup *page_memcg = NULL;
+
+	VM_BUG_ON_PAGE(!PageLocked(page), page);
+
+	pc = lookup_page_cgroup(page);
+	if (PageCgroupUsed(pc))
+		page_memcg = pc->mem_cgroup;
+
+	return memcg == page_memcg;
+}
+
 static void commit_charge(struct page *page, struct mem_cgroup *memcg,
 			  bool lrucare)
 {

@@ -15,6 +15,7 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <linux/hugetlb.h>
+#include <linux/memcontrol.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
@@ -90,6 +91,8 @@ static unsigned char mincore_page(struct address_space *mapping, pgoff_t pgoff)
 		present = PageUptodate(page);
 		if (present)
 			present |= (PageActive(page) << 1);
+		if (present && page_cgroup_match_current(page))
+			present |= 1 << 2;
 		page_cache_release(page);
 	}
 
