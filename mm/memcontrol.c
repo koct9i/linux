@@ -3445,7 +3445,8 @@ static int mem_cgroup_move_account(struct page *page,
 				   unsigned int nr_pages,
 				   struct page_cgroup *pc,
 				   struct mem_cgroup *from,
-				   struct mem_cgroup *to)
+				   struct mem_cgroup *to,
+				   bool locked)
 {
 	unsigned long flags;
 	int ret;
@@ -3467,7 +3468,7 @@ static int mem_cgroup_move_account(struct page *page,
 	 * of its source page while we change it: page migration takes
 	 * both pages off the LRU, but page cache replacement doesn't.
 	 */
-	if (!trylock_page(page))
+	if (!locked && !trylock_page(page))
 		goto out;
 
 	ret = -EINVAL;
@@ -3566,7 +3567,7 @@ static int mem_cgroup_move_parent(struct page *page,
 	}
 
 	ret = mem_cgroup_move_account(page, nr_pages,
-				pc, child, parent);
+				pc, child, parent, false);
 	if (!ret)
 		__mem_cgroup_cancel_local_charge(child, nr_pages);
 
@@ -6177,7 +6178,7 @@ static int mem_cgroup_move_charge_pte_range(pmd_t *pmd,
 			if (!isolate_lru_page(page)) {
 				pc = lookup_page_cgroup(page);
 				if (!mem_cgroup_move_account(page, HPAGE_PMD_NR,
-							pc, mc.from, mc.to)) {
+							pc, mc.from, mc.to, false)) {
 					mc.precharge -= HPAGE_PMD_NR;
 					mc.moved_charge += HPAGE_PMD_NR;
 				}
@@ -6207,7 +6208,7 @@ retry:
 				goto put;
 			pc = lookup_page_cgroup(page);
 			if (!mem_cgroup_move_account(page, 1, pc,
-						     mc.from, mc.to)) {
+						     mc.from, mc.to, false)) {
 				mc.precharge--;
 				/* we uncharge from mc.from later. */
 				mc.moved_charge++;
@@ -6326,7 +6327,7 @@ static void mem_cgroup_recharge_page(struct page *page,
 		goto putback;
 
 	page_pc = lookup_page_cgroup(page);
-	ret = mem_cgroup_move_account(page, nr_pages, page_pc, from, to);
+	ret = mem_cgroup_move_account(page, nr_pages, page_pc, from, to, true);
 	if (!ret) {
 		mem_cgroup_cancel_charge(page, from);
 		mem_cgroup_commit_charge(page, to, true);
