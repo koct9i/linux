@@ -9,8 +9,16 @@
 
 #ifdef CONFIG_FSIO_CGROUP
 
+enum fsio_state {
+	FSIO_dirty_limited,
+	FSIO_dirty_exceeded,
+};
+
 struct fsio_cgroup {
 	struct cgroup_subsys_state css;
+	unsigned long state;
+	unsigned long thresh;
+	unsigned long bg_thresh;
 	struct percpu_counter read_bytes;
 	struct percpu_counter write_bytes;
 	struct percpu_counter nr_dirty;
@@ -150,6 +158,10 @@ static inline void fsio_forget_inode(struct inode *inode)
 	}
 }
 
+bool fsio_dirty_limits(struct address_space *mapping, unsigned long *dirty,
+		       unsigned long *thresh, unsigned long *bg_thresh);
+bool fsio_skip_inode(struct inode *inode);
+
 #else /* CONFIG_FSIO_CGROUP */
 
 static inline void fsio_account_read(unsigned long bytes) {}
@@ -160,6 +172,9 @@ static inline void fsio_cancel_dirty_page(struct address_space *mapping) {}
 static inline void fsio_set_page_writeback(struct address_space *mapping) {}
 static inline void fsio_clear_page_writeback(struct address_space *mapping) {}
 static inline void fsio_forget_inode(struct inode *inode) {}
+static inline bool fsio_dirty_limits(struct address_space *mapping, unsigned long *dirty,
+		       unsigned long *thresh, unsigned long *bg_thresh) { return false; }
+static inline bool fsio_skip_inode(struct inode *inode) { return false; }
 
 #endif /* CONFIG_FSIO_CGROUP */
 

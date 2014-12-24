@@ -27,6 +27,7 @@
 #include <linux/backing-dev.h>
 #include <linux/tracepoint.h>
 #include <linux/device.h>
+#include <linux/fsio_cgroup.h>
 #include "internal.h"
 
 /*
@@ -47,6 +48,7 @@ struct wb_writeback_work {
 	unsigned int range_cyclic:1;
 	unsigned int for_background:1;
 	unsigned int for_sync:1;	/* sync(2) WB_SYNC_ALL writeback */
+	unsigned int for_fsio:1;
 	enum wb_reason reason;		/* why was writeback initiated? */
 
 	struct list_head list;		/* pending work list */
@@ -137,6 +139,7 @@ __bdi_start_writeback(struct backing_dev_info *bdi, long nr_pages,
 	work->nr_pages	= nr_pages;
 	work->range_cyclic = range_cyclic;
 	work->reason	= reason;
+	work->for_fsio  = reason == WB_REASON_FSIO_CGROUP;
 
 	bdi_queue_work(bdi, work);
 }
@@ -258,15 +261,16 @@ static int move_expired_inodes(struct list_head *delaying_queue,
 	LIST_HEAD(tmp);
 	struct list_head *pos, *node;
 	struct super_block *sb = NULL;
-	struct inode *inode;
+	struct inode *inode, *next;
 	int do_sb_sort = 0;
 	int moved = 0;
 
-	while (!list_empty(delaying_queue)) {
-		inode = wb_inode(delaying_queue->prev);
+	list_for_each_entry_safe(inode, next, delaying_queue, i_wb_list) {
 		if (work->older_than_this &&
 		    inode_dirtied_after(inode, *work->older_than_this))
 			break;
+		if (work->for_fsio && fsio_skip_inode(inode))
+			continue;
 		list_move(&inode->i_wb_list, &tmp);
 		moved++;
 		if (sb_is_blkdev_sb(inode->i_sb))
@@ -634,6 +638,11 @@ static long writeback_sb_inodes(struct super_block *sb,
 			break;
 		}
 
+		if (work->for_fsio && fsio_skip_inode(inode)) {
+			redirty_tail(inode, wb);
+			continue;
+		}
+
 		/*
 		 * Don't bother with new inodes or inodes being freed, first
 		 * kind does not need periodic writeout yet, and for the latter
@@ -997,6 +1006,9 @@ static long wb_do_writeback(struct bdi_writeback *wb)
 		trace_writeback_exec(bdi, work);
 
 		wrote += wb_writeback(wb, work);
+
+		if (work->for_fsio && IS_ENABLED(CONFIG_FSIO_CGROUP))
+			clear_bit(BDI_fsio_writeback_running, &bdi->state);
 
 		/*
 		 * Notify the caller of completion if this is a synchronous
