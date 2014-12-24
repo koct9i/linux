@@ -18,6 +18,7 @@
 #include <linux/buffer_head.h> /* for inode_has_buffers */
 #include <linux/ratelimit.h>
 #include <linux/list_lru.h>
+#include <linux/fsio_cgroup.h>
 #include "internal.h"
 
 /*
@@ -557,6 +558,7 @@ static void evict(struct inode *inode)
 		bd_forget(inode);
 	if (S_ISCHR(inode->i_mode) && inode->i_cdev)
 		cd_forget(inode);
+	fsio_forget_inode(inode);
 
 	remove_inode_hash(inode);
 

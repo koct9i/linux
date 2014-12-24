@@ -13,6 +13,7 @@
 #include <linux/blkdev.h>
 #include <linux/backing-dev.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/pagevec.h>
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
@@ -102,6 +103,7 @@ int read_cache_pages(struct address_space *mapping, struct list_head *pages,
 			break;
 		}
 		task_io_account_read(PAGE_CACHE_SIZE);
+		fsio_account_read(PAGE_CACHE_SIZE);
 	}
 	return ret;
 }

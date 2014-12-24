@@ -415,6 +415,9 @@ struct address_space {
 	spinlock_t		private_lock;	/* for use by the address_space */
 	struct list_head	private_list;	/* ditto */
 	void			*private_data;	/* ditto */
+#ifdef CONFIG_FSIO_CGROUP
+	struct fsio_cgroup	*i_fsio;	/* protected by ->tree_lock */
+#endif
 } __attribute__((aligned(sizeof(long))));
 	/*
 	 * On most architectures that alignment is already the case; but
@@ -469,6 +472,11 @@ struct block_device {
 #define PAGECACHE_TAG_TOWRITE	2
 
 int mapping_tagged(struct address_space *mapping, int tag);
+
+static inline unsigned mapping_tags(struct address_space *mapping)
+{
+	return (__force unsigned)mapping->page_tree.gfp_mask >> __GFP_BITS_SHIFT;
+}
 
 /*
  * Might pages of this file be mapped into userspace?
