@@ -1093,6 +1093,7 @@ struct sched_statistics {
 	u64			iowait_sum;
 
 	u64			sleep_start;
+	u64			delay_start;
 	u64			sleep_max;
 	s64			sum_sleep_runtime;
 
@@ -1626,6 +1627,10 @@ struct task_struct {
 	 */
 	unsigned long timer_slack_ns;
 	unsigned long default_timer_slack_ns;
+
+	/* Pause task till this time before returning into userspace */
+	ktime_t delay_injection_target;
+	struct callback_head delay_injection_work;
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	/* Index of current stored address in ret_stack */
@@ -2235,6 +2240,8 @@ extern struct task_struct *curr_task(int cpu);
 extern void set_curr_task(int cpu, struct task_struct *p);
 
 void yield(void);
+
+extern void inject_delay(ktime_t target);
 
 /*
  * The default (Linux) execution domain.
