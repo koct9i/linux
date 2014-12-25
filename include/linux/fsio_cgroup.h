@@ -14,6 +14,7 @@ enum fsio_state {
 	FSIO_dirty_limited,
 	FSIO_dirty_exceeded,
 	FSIO_bandwidth_limited,
+	FSIO_iops_limited,
 };
 
 struct fsio_cgroup {
@@ -26,6 +27,7 @@ struct fsio_cgroup {
 	struct percpu_counter nr_dirty;
 	struct percpu_counter nr_writeback;
 	struct percpu_ratelimit bandwidth;
+	struct percpu_ratelimit iops;
 };
 
 static inline struct fsio_cgroup *fsio_css_cgroup(struct cgroup_subsys_state *css)
@@ -77,6 +79,20 @@ static inline void fsio_account_write(unsigned long bytes)
 	while (fsio && test_bit(FSIO_bandwidth_limited, &fsio->state)) {
 		if (percpu_ratelimit_charge(&fsio->bandwidth, bytes))
 			inject_delay(percpu_ratelimit_target(&fsio->bandwidth));
+		fsio = fsio_parent_cgroup(fsio);
+	}
+	rcu_read_unlock();
+}
+
+static inline void fsio_account_io_operation(void)
+{
+	struct fsio_cgroup *fsio;
+
+	rcu_read_lock();
+	fsio = fsio_task_cgroup(current);
+	while (fsio && test_bit(FSIO_iops_limited, &fsio->state)) {
+		if (percpu_ratelimit_charge(&fsio->iops, 1))
+			inject_delay(percpu_ratelimit_target(&fsio->iops));
 		fsio = fsio_parent_cgroup(fsio);
 	}
 	rcu_read_unlock();
@@ -190,6 +206,7 @@ bool fsio_skip_inode(struct inode *inode);
 
 static inline void fsio_account_read(unsigned long bytes) {}
 static inline void fsio_account_write(unsigned long bytes) {}
+static inline void fsio_account_io_operation(void) {}
 static inline void fsio_account_page_dirtied(struct address_space *mapping) {}
 static inline void fsio_clear_page_dirty(struct address_space *mapping) {}
 static inline void fsio_cancel_dirty_page(struct address_space *mapping) {}

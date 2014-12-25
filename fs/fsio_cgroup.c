@@ -12,6 +12,7 @@ static void fsio_css_free(struct cgroup_subsys_state *css)
 	percpu_counter_destroy(&fsio->nr_dirty);
 	percpu_counter_destroy(&fsio->nr_writeback);
 	percpu_ratelimit_destroy(&fsio->bandwidth);
+	percpu_ratelimit_destroy(&fsio->iops);
 	kfree(fsio);
 }
 
@@ -28,7 +29,8 @@ fsio_css_alloc(struct cgroup_subsys_state *parent_css)
 	    percpu_counter_init(&fsio->write_bytes, 0, GFP_KERNEL) ||
 	    percpu_counter_init(&fsio->nr_dirty, 0, GFP_KERNEL) ||
 	    percpu_counter_init(&fsio->nr_writeback, 0, GFP_KERNEL) ||
-	    percpu_ratelimit_init(&fsio->bandwidth, GFP_KERNEL)) {
+	    percpu_ratelimit_init(&fsio->bandwidth, GFP_KERNEL) ||
+	    percpu_ratelimit_init(&fsio->iops, GFP_KERNEL)) {
 		fsio_css_free(&fsio->css);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -72,6 +74,9 @@ static int fsio_css_online(struct cgroup_subsys_state *css)
 
 	if (parent && test_bit(FSIO_bandwidth_limited, &parent->state))
 		set_bit(FSIO_bandwidth_limited, &fsio->state);
+
+	if (parent && test_bit(FSIO_iops_limited, &parent->state))
+		set_bit(FSIO_iops_limited, &fsio->state);
 
 	return 0;
 }
@@ -224,6 +229,60 @@ static int fsio_set_bandwidth_limit(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+static u64 fsio_get_iops_count(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct fsio_cgroup *fsio = fsio_css_cgroup(css);
+
+	return percpu_ratelimit_sum(&fsio->iops);
+}
+
+static u64 fsio_get_iops_limit(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct fsio_cgroup *fsio = fsio_css_cgroup(css);
+
+	if (fsio->iops.quota == ULLONG_MAX)
+		return 0;
+
+	return fsio->iops.quota * NSEC_PER_SEC /
+		ktime_to_ns(fsio->iops.period);
+}
+
+static int fsio_set_iops_limit(struct cgroup_subsys_state *css,
+				    struct cftype *cft, u64 val)
+{
+	struct fsio_cgroup *fsio = fsio_css_cgroup(css);
+	struct cgroup_subsys_state *pos;
+	u64 period;
+
+	if (val) {
+		period = NSEC_PER_SEC / 10;
+		val = max(val / 10, 1ull);
+	} else {
+		period = NSEC_PER_SEC;
+		val = ULLONG_MAX;
+	}
+
+	percpu_ratelimit_setup(&fsio->iops, period, val);
+
+	rcu_read_lock();
+	css_for_each_descendant_pre(pos, css) {
+		struct fsio_cgroup *child = fsio_css_cgroup(pos);
+		struct fsio_cgroup *parent = fsio_parent_cgroup(child);
+
+		if (!(pos->flags & CSS_ONLINE))
+			continue;
+
+		if (child->iops.quota != ULLONG_MAX ||
+		    (parent && test_bit(FSIO_iops_limited, &parent->state)))
+			set_bit(FSIO_iops_limited, &child->state);
+		else
+			clear_bit(FSIO_iops_limited, &child->state);
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
 static struct cftype fsio_files[] = {
 	{
 		.name = "read_bytes",
@@ -254,6 +313,15 @@ static struct cftype fsio_files[] = {
 		.name = "bandwidth_limit",
 		.read_u64 = fsio_get_bandwidth_limit,
 		.write_u64 = fsio_set_bandwidth_limit,
+	},
+	{
+		.name = "iops_count",
+		.read_u64 = fsio_get_iops_count,
+	},
+	{
+		.name = "iops_limit",
+		.read_u64 = fsio_get_iops_limit,
+		.write_u64 = fsio_set_iops_limit,
 	},
 	{ }	/* terminate */
 };
