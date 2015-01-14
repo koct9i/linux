@@ -1329,6 +1329,17 @@ static inline void bdi_dirty_limits(struct backing_dev_info *bdi,
 	}
 }
 
+static unsigned long fsio_position_ratio(unsigned long dirty,
+		unsigned long thresh, unsigned long bg_thresh)
+{
+	unsigned long setpoint = dirty_freerun_ceiling(thresh, bg_thresh);
+
+	if (dirty > thresh)
+		return 0;
+
+	return pos_ratio_polynom(setpoint, dirty, thresh);
+}
+
 /*
  * balance_dirty_pages() must be called by processes which are generating dirty
  * data.  It looks at the number of dirty pages in the machine and will force
@@ -1363,6 +1374,7 @@ static void balance_dirty_pages(struct address_space *mapping,
 		unsigned long uninitialized_var(bdi_dirty);
 		unsigned long dirty;
 		unsigned long bg_thresh;
+		bool fsio;
 
 		/*
 		 * Unstable writes are a feature of certain networked
@@ -1388,6 +1400,8 @@ static void balance_dirty_pages(struct address_space *mapping,
 			bg_thresh = background_thresh;
 		}
 
+		fsio = fsio_dirty_limits(mapping, &dirty, &thresh, &bg_thresh);
+
 		/*
 		 * Throttle it only when the background writeback cannot
 		 * catch-up. This avoids (excessively) small writeouts
@@ -1405,7 +1419,7 @@ static void balance_dirty_pages(struct address_space *mapping,
 			break;
 		}
 
-		if (unlikely(!writeback_in_progress(bdi)))
+		if (unlikely(!writeback_in_progress(bdi) && !fsio))
 			bdi_start_background_writeback(bdi);
 
 		if (!strictlimit)
@@ -1422,9 +1436,12 @@ static void balance_dirty_pages(struct address_space *mapping,
 				     start_time);
 
 		dirty_ratelimit = bdi->dirty_ratelimit;
-		pos_ratio = bdi_position_ratio(bdi, dirty_thresh,
-					       background_thresh, nr_dirty,
-					       bdi_thresh, bdi_dirty);
+		if (fsio)
+			pos_ratio = fsio_position_ratio(dirty, thresh, bg_thresh);
+		else
+			pos_ratio = bdi_position_ratio(bdi, dirty_thresh,
+					background_thresh, nr_dirty,
+					bdi_thresh, bdi_dirty);
 		task_ratelimit = ((u64)dirty_ratelimit * pos_ratio) >>
 							RATELIMIT_CALC_SHIFT;
 		max_pause = bdi_max_pause(bdi, bdi_dirty);

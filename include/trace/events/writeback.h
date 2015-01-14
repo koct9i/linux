@@ -29,6 +29,7 @@
 		{WB_REASON_LAPTOP_TIMER,	"laptop_timer"},	\
 		{WB_REASON_FREE_MORE_MEM,	"free_more_memory"},	\
 		{WB_REASON_FS_FREE_SPACE,	"fs_free_space"},	\
+		{WB_REASON_FSIO_CGROUP,		"fsio_cgroup"},		\
 		{WB_REASON_FORKER_THREAD,	"forker_thread"}
 
 struct wb_writeback_work;
