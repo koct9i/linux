@@ -32,6 +32,7 @@
 #include <linux/list_sort.h>
 #include <linux/delay.h>
 #include <linux/ratelimit.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/pm_runtime.h>
 
 #define CREATE_TRACE_POINTS
@@ -2191,6 +2192,7 @@ void blk_account_io_start(struct request *rq, bool new_io)
 		}
 		part_round_stats(cpu, part);
 		part_inc_in_flight(part, rw);
+		fsio_account_io_operation();
 		rq->part = part;
 	}
 
