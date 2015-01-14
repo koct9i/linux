@@ -2944,6 +2944,15 @@ static void enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 			account_scheduler_latency(tsk, delta >> 10, 0);
 		}
 	}
+	if (se->statistics.delay_start) {
+		u64 delta = rq_clock(rq_of(cfs_rq)) - se->statistics.delay_start;
+
+		if ((s64)delta < 0)
+			delta = 0;
+
+		se->statistics.delay_start = 0;
+		trace_sched_stat_delayed(tsk, delta);
+	}
 #endif
 }
 
@@ -3095,6 +3104,9 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 				se->statistics.sleep_start = rq_clock(rq_of(cfs_rq));
 			if (tsk->state & TASK_UNINTERRUPTIBLE)
 				se->statistics.block_start = rq_clock(rq_of(cfs_rq));
+			if ((tsk->state & TASK_PARKED) &&
+			    tsk->delay_injection_target.tv64)
+				se->statistics.delay_start = rq_clock(rq_of(cfs_rq));
 		}
 #endif
 	}
