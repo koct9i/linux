@@ -28,6 +28,7 @@
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/bio.h>
 #include <linux/wait.h>
 #include <linux/err.h>
@@ -775,6 +776,7 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		 * Read accounting is performed in submit_bio()
 		 */
 		task_io_account_write(len);
+		fsio_account_write(len);
 	}
 
 	/*

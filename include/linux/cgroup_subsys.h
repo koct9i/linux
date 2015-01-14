@@ -47,6 +47,10 @@ SUBSYS(net_prio)
 SUBSYS(hugetlb)
 #endif
 
+#if IS_ENABLED(CONFIG_FSIO_CGROUP)
+SUBSYS(fsio)
+#endif
+
 /*
  * The following subsystems are not supported on the default hierarchy.
  */

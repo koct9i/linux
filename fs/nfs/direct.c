@@ -46,6 +46,7 @@
 #include <linux/kref.h>
 #include <linux/slab.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/fsio_cgroup.h>
 #include <linux/module.h>
 
 #include <linux/nfs_fs.h>
@@ -533,6 +534,7 @@ ssize_t nfs_file_direct_read(struct kiocb *iocb, struct iov_iter *iter,
 		goto out_unlock;
 
 	task_io_account_read(count);
+	fsio_account_read(count);
 
 	result = -ENOMEM;
 	dreq = nfs_direct_req_alloc();
@@ -920,6 +922,7 @@ ssize_t nfs_file_direct_write(struct kiocb *iocb, struct iov_iter *iter,
 	}
 
 	task_io_account_write(count);
+	fsio_account_write(count);
 
 	result = -ENOMEM;
 	dreq = nfs_direct_req_alloc();
