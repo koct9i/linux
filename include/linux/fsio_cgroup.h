@@ -6,12 +6,14 @@
 #include <linux/cgroup.h>
 #include <linux/workqueue.h>
 #include <linux/percpu_counter.h>
+#include <linux/percpu_ratelimit.h>
 
 #ifdef CONFIG_FSIO_CGROUP
 
 enum fsio_state {
 	FSIO_dirty_limited,
 	FSIO_dirty_exceeded,
+	FSIO_bandwidth_limited,
 };
 
 struct fsio_cgroup {
@@ -23,6 +25,7 @@ struct fsio_cgroup {
 	struct percpu_counter write_bytes;
 	struct percpu_counter nr_dirty;
 	struct percpu_counter nr_writeback;
+	struct percpu_ratelimit bandwidth;
 };
 
 static inline struct fsio_cgroup *fsio_css_cgroup(struct cgroup_subsys_state *css)
@@ -58,6 +61,11 @@ static inline void fsio_account_read(unsigned long bytes)
 	fsio = fsio_task_cgroup(current);
 	__percpu_counter_add(&fsio->read_bytes, bytes,
 			     PAGE_CACHE_SIZE * percpu_counter_batch);
+	while (fsio && test_bit(FSIO_bandwidth_limited, &fsio->state)) {
+		if (percpu_ratelimit_charge(&fsio->bandwidth, bytes))
+			inject_delay(percpu_ratelimit_target(&fsio->bandwidth));
+		fsio = fsio_parent_cgroup(fsio);
+	}
 	rcu_read_unlock();
 }
 
@@ -72,6 +80,11 @@ static inline void fsio_account_write(unsigned long bytes)
 	fsio = fsio_task_cgroup(current);
 	__percpu_counter_add(&fsio->write_bytes, bytes,
 			     PAGE_CACHE_SIZE * percpu_counter_batch);
+	while (fsio && test_bit(FSIO_bandwidth_limited, &fsio->state)) {
+		if (percpu_ratelimit_charge(&fsio->bandwidth, bytes))
+			inject_delay(percpu_ratelimit_target(&fsio->bandwidth));
+		fsio = fsio_parent_cgroup(fsio);
+	}
 	rcu_read_unlock();
 }
 
@@ -124,8 +137,19 @@ static inline void fsio_set_page_writeback(struct address_space *mapping)
 {
 	struct fsio_cgroup *fsio = fsio_mapping_cgroup(mapping);
 
-	for (; fsio; fsio = fsio_parent_cgroup(fsio))
+	for (; fsio; fsio = fsio_parent_cgroup(fsio)) {
 		percpu_counter_inc(&fsio->nr_writeback);
+		percpu_ratelimit_charge(&fsio->bandwidth, PAGE_CACHE_SIZE);
+	}
+
+	rcu_read_lock();
+	fsio = fsio_task_cgroup(current);
+	while (fsio && test_bit(FSIO_bandwidth_limited, &fsio->state)) {
+		if (percpu_ratelimit_blocked(&fsio->bandwidth))
+			inject_delay(percpu_ratelimit_target(&fsio->bandwidth));
+		fsio = fsio_parent_cgroup(fsio);
+	}
+	rcu_read_unlock();
 }
 
 /*
