@@ -183,6 +183,8 @@ bool mem_cgroup_dirty_limits(struct address_space *mapping, unsigned long *dirty
 bool mem_cgroup_dirty_exceeded(struct inode *inode);
 void mem_cgroup_poke_writeback(struct address_space *mapping,
 			       struct mem_cgroup *memcg);
+void mem_cgroup_account_bandwidth(unsigned long bytes);
+void mem_cgroup_account_ioop(void);
 
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
@@ -362,6 +364,8 @@ static inline bool mem_cgroup_dirty_limits(struct address_space *mapping, unsign
 static inline bool mem_cgroup_dirty_exceeded(struct inode *inode) { return false; }
 static inline void mem_cgroup_poke_writeback(struct address_space *mapping,
 					     struct mem_cgroup *memcg) { }
+static inline void mem_cgroup_account_bandwidth(unsigned long bytes) {}
+static inline void mem_cgroup_account_ioop(void) {}
 
 #endif /* CONFIG_MEMCG */
 

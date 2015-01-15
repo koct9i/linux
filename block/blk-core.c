@@ -1966,6 +1966,7 @@ void submit_bio(int rw, struct bio *bio)
 			count_vm_events(PGPGOUT, count);
 		} else {
 			task_io_account_read(bio->bi_iter.bi_size);
+			mem_cgroup_account_bandwidth(bio->bi_iter.bi_size);
 			count_vm_events(PGPGIN, count);
 		}
 
@@ -2208,6 +2209,7 @@ void blk_account_io_start(struct request *rq, bool new_io)
 		}
 		part_round_stats(cpu, part);
 		part_inc_in_flight(part, rw);
+		mem_cgroup_account_ioop();
 		rq->part = part;
 	}
 

@@ -16,6 +16,7 @@
 #include <linux/pagevec.h>
 #include <linux/pagemap.h>
 #include <linux/syscalls.h>
+#include <linux/memcontrol.h>
 #include <linux/file.h>
 
 #include "internal.h"
@@ -102,6 +103,7 @@ int read_cache_pages(struct address_space *mapping, struct list_head *pages,
 			break;
 		}
 		task_io_account_read(PAGE_CACHE_SIZE);
+		mem_cgroup_account_bandwidth(PAGE_CACHE_SIZE);
 	}
 	return ret;
 }

@@ -27,6 +27,7 @@
 
 #include <linux/page_counter.h>
 #include <linux/memcontrol.h>
+#include <linux/percpu_ratelimit.h>
 #include <linux/cgroup.h>
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
@@ -367,6 +368,9 @@ struct mem_cgroup {
 	unsigned long dirty_background;
 	unsigned int dirty_exceeded;
 	unsigned int dirty_ratio;
+
+	struct percpu_ratelimit iobw;
+	struct percpu_ratelimit ioop;
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
@@ -3762,6 +3766,12 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "fs_dirty_threshold %llu\n", (u64)PAGE_SIZE *
 			memcg->dirty_threshold);
 
+	seq_printf(m, "fs_io_bytes %llu\n",
+			percpu_ratelimit_sum(&memcg->iobw));
+	seq_printf(m, "fs_io_operations %llu\n",
+			percpu_ratelimit_sum(&memcg->ioop));
+
+
 #ifdef CONFIG_DEBUG_VM
 	{
 		int nid, zid;
@@ -3830,6 +3840,40 @@ static int mem_cgroup_dirty_ratio_write(struct cgroup_subsys_state *css,
 	memcg->dirty_ratio = val;
 	mem_cgroup_update_dirty_thresh(memcg);
 
+	return 0;
+}
+
+static u64 mem_cgroup_get_bps_limit(
+		struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return percpu_ratelimit_quota(&memcg->iobw, NSEC_PER_SEC);
+}
+
+static int mem_cgroup_set_bps_limit(
+		struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	percpu_ratelimit_setup(&memcg->iobw, val, NSEC_PER_SEC);
+	return 0;
+}
+
+static u64 mem_cgroup_get_iops_limit(
+		struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return percpu_ratelimit_quota(&memcg->ioop, NSEC_PER_SEC);
+}
+
+static int mem_cgroup_set_iops_limit(
+		struct cgroup_subsys_state *css, struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	percpu_ratelimit_setup(&memcg->ioop, val, NSEC_PER_SEC);
 	return 0;
 }
 
@@ -4489,6 +4533,16 @@ static struct cftype mem_cgroup_files[] = {
 		.write_u64 = mem_cgroup_dirty_ratio_write,
 	},
 	{
+		.name = "fs_bps_limit",
+		.read_u64 = mem_cgroup_get_bps_limit,
+		.write_u64 = mem_cgroup_set_bps_limit,
+	},
+	{
+		.name = "fs_iops_limit",
+		.read_u64 = mem_cgroup_get_iops_limit,
+		.write_u64 = mem_cgroup_set_iops_limit,
+	},
+	{
 		.name = "move_charge_at_immigrate",
 		.read_u64 = mem_cgroup_move_charge_read,
 		.write_u64 = mem_cgroup_move_charge_write,
@@ -4621,7 +4675,9 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 		return NULL;
 
 	if (percpu_counter_init(&memcg->nr_dirty, 0, GFP_KERNEL) ||
-	    percpu_counter_init(&memcg->nr_writeback, 0, GFP_KERNEL))
+	    percpu_counter_init(&memcg->nr_writeback, 0, GFP_KERNEL) ||
+	    percpu_ratelimit_init(&memcg->iobw, GFP_KERNEL) ||
+	    percpu_ratelimit_init(&memcg->ioop, GFP_KERNEL))
 		goto out_free;
 
 	memcg->stat = alloc_percpu(struct mem_cgroup_stat_cpu);
@@ -4633,6 +4689,8 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 out_free:
 	percpu_counter_destroy(&memcg->nr_dirty);
 	percpu_counter_destroy(&memcg->nr_writeback);
+	percpu_ratelimit_destroy(&memcg->iobw);
+	percpu_ratelimit_destroy(&memcg->ioop);
 	kfree(memcg);
 	return NULL;
 }
@@ -4659,6 +4717,8 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 
 	percpu_counter_destroy(&memcg->nr_dirty);
 	percpu_counter_destroy(&memcg->nr_writeback);
+	percpu_ratelimit_destroy(&memcg->iobw);
+	percpu_ratelimit_destroy(&memcg->ioop);
 	free_percpu(memcg->stat);
 
 	disarm_static_keys(memcg);
@@ -5956,8 +6016,44 @@ void mem_cgroup_inc_page_writeback(struct address_space *mapping)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_mapping(mapping);
 
-	for (; memcg; memcg = parent_mem_cgroup(memcg))
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
 		percpu_counter_inc(&memcg->nr_writeback);
+		percpu_ratelimit_charge(&memcg->iobw, PAGE_CACHE_SIZE);
+	}
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(current);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		if (percpu_ratelimit_blocked(&memcg->iobw))
+			inject_delay(percpu_ratelimit_target(&memcg->iobw));
+	}
+	rcu_read_unlock();
+}
+
+void mem_cgroup_account_bandwidth(unsigned long bytes)
+{
+	struct mem_cgroup *memcg;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(current);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		if (percpu_ratelimit_charge(&memcg->iobw, bytes))
+			inject_delay(percpu_ratelimit_target(&memcg->iobw));
+	}
+	rcu_read_unlock();
+}
+
+void mem_cgroup_account_ioop(void)
+{
+	struct mem_cgroup *memcg;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(current);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		if (percpu_ratelimit_charge(&memcg->ioop, 1))
+			inject_delay(percpu_ratelimit_target(&memcg->ioop));
+	}
+	rcu_read_unlock();
 }
 
 void mem_cgroup_dec_page_writeback(struct address_space *mapping)
@@ -6038,6 +6134,8 @@ bool mem_cgroup_dirty_limits(struct address_space *mapping,
 		if (dirty > background) {
 			if (!memcg->dirty_exceeded)
 				memcg->dirty_exceeded = 1;
+			if (percpu_ratelimit_blocked(&memcg->iobw))
+				inject_delay(percpu_ratelimit_target(&memcg->iobw));
 			rcu_read_unlock();
 			if (dirty > (background + threshold) / 2 &&
 			    !test_and_set_bit(BDI_memcg_writeback_running,
