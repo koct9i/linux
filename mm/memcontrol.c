@@ -363,6 +363,10 @@ struct mem_cgroup {
 
 	struct percpu_counter nr_dirty;
 	struct percpu_counter nr_writeback;
+	unsigned long dirty_threshold;
+	unsigned long dirty_background;
+	unsigned int dirty_exceeded;
+	unsigned int dirty_ratio;
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
@@ -3060,6 +3064,8 @@ static inline int mem_cgroup_move_swap_account(swp_entry_t entry,
 
 static DEFINE_MUTEX(memcg_limit_mutex);
 
+static void mem_cgroup_update_dirty_thresh(struct mem_cgroup *memcg);
+
 static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 				   unsigned long limit)
 {
@@ -3111,6 +3117,9 @@ static int mem_cgroup_resize_limit(struct mem_cgroup *memcg,
 
 	if (!ret && enlarge)
 		memcg_oom_recover(memcg);
+
+	if (!ret)
+		mem_cgroup_update_dirty_thresh(memcg);
 
 	return ret;
 }
@@ -3750,6 +3759,8 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 			percpu_counter_sum_positive(&memcg->nr_dirty));
 	seq_printf(m, "fs_writeback %llu\n", PAGE_SIZE *
 			percpu_counter_sum_positive(&memcg->nr_writeback));
+	seq_printf(m, "fs_dirty_threshold %llu\n", (u64)PAGE_SIZE *
+			memcg->dirty_threshold);
 
 #ifdef CONFIG_DEBUG_VM
 	{
@@ -3799,6 +3810,25 @@ static int mem_cgroup_swappiness_write(struct cgroup_subsys_state *css,
 		memcg->swappiness = val;
 	else
 		vm_swappiness = val;
+
+	return 0;
+}
+
+static u64 mem_cgroup_dirty_ratio_read(struct cgroup_subsys_state *css,
+				       struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	return memcg->dirty_ratio;
+}
+
+static int mem_cgroup_dirty_ratio_write(struct cgroup_subsys_state *css,
+					struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	memcg->dirty_ratio = val;
+	mem_cgroup_update_dirty_thresh(memcg);
 
 	return 0;
 }
@@ -4454,6 +4484,11 @@ static struct cftype mem_cgroup_files[] = {
 		.write_u64 = mem_cgroup_swappiness_write,
 	},
 	{
+		.name = "dirty_ratio",
+		.read_u64 = mem_cgroup_dirty_ratio_read,
+		.write_u64 = mem_cgroup_dirty_ratio_write,
+	},
+	{
 		.name = "move_charge_at_immigrate",
 		.read_u64 = mem_cgroup_move_charge_read,
 		.write_u64 = mem_cgroup_move_charge_write,
@@ -4686,6 +4721,7 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		memcg->soft_limit = PAGE_COUNTER_MAX;
 		page_counter_init(&memcg->memsw, NULL);
 		page_counter_init(&memcg->kmem, NULL);
+		memcg->dirty_ratio = 50; /* default value for cgroups */
 	}
 
 	memcg->last_scanned_node = MAX_NUMNODES;
@@ -4750,6 +4786,10 @@ mem_cgroup_css_online(struct cgroup_subsys_state *css)
 		if (parent != root_mem_cgroup)
 			memory_cgrp_subsys.broken_hierarchy = true;
 	}
+
+	memcg->dirty_ratio = parent->dirty_ratio;
+	mem_cgroup_update_dirty_thresh(memcg);
+
 	mutex_unlock(&memcg_create_mutex);
 
 	ret = memcg_init_kmem(memcg, &memory_cgrp_subsys);
@@ -5937,6 +5977,111 @@ void mem_cgroup_forget_mapping(struct address_space *mapping)
 		css_put(&memcg->css);
 		RCU_INIT_POINTER(mapping->i_memcg, NULL);
 	}
+}
+
+static void mem_cgroup_update_dirty_thresh(struct mem_cgroup *memcg)
+{
+	struct cgroup_subsys_state *pos;
+
+	if (memcg->memory.limit > totalram_pages || !memcg->dirty_ratio) {
+		memcg->dirty_threshold = 0; /* 0 means no limit at all*/
+		memcg->dirty_background = ULONG_MAX;
+	} else {
+		memcg->dirty_threshold = memcg->memory.limit *
+					 memcg->dirty_ratio / 100;
+		memcg->dirty_background = memcg->dirty_threshold / 2;
+	}
+
+	/* Propogate threshold into childs */
+	rcu_read_lock();
+	css_for_each_descendant_pre(pos, &memcg->css) {
+		struct mem_cgroup *memcg = mem_cgroup_from_css(pos);
+		struct mem_cgroup *parent = parent_mem_cgroup(memcg);
+
+		if (!(pos->flags & CSS_ONLINE))
+			continue;
+
+		if (memcg->dirty_threshold == 0 ||
+		    memcg->dirty_threshold == ULONG_MAX) {
+			if (parent && parent->use_hierarchy &&
+				      parent->dirty_threshold)
+				memcg->dirty_threshold = ULONG_MAX;
+			else
+				memcg->dirty_threshold = 0;
+		}
+	}
+	rcu_read_unlock();
+}
+
+bool mem_cgroup_dirty_limits(struct address_space *mapping,
+			     unsigned long *pdirty,
+			     unsigned long *pthresh,
+			     unsigned long *pbg_thresh)
+{
+	struct backing_dev_info *bdi = mapping->backing_dev_info;
+	unsigned long dirty, threshold, background;
+	struct mem_cgroup *memcg;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(current);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		/* No limit at all */
+		if (memcg->dirty_threshold == 0)
+			break;
+		/* No limit here, but must check parent */
+		if (memcg->dirty_threshold == ULONG_MAX)
+			continue;
+		dirty = percpu_counter_read_positive(&memcg->nr_dirty) +
+			percpu_counter_read_positive(&memcg->nr_writeback);
+		threshold = memcg->dirty_threshold;
+		background = memcg->dirty_background;
+		if (dirty > background) {
+			if (!memcg->dirty_exceeded)
+				memcg->dirty_exceeded = 1;
+			rcu_read_unlock();
+			if (dirty > (background + threshold) / 2 &&
+			    !test_and_set_bit(BDI_memcg_writeback_running,
+					      &bdi->state))
+				bdi_start_writeback(bdi, dirty - background,
+						    WB_REASON_FOR_MEMCG);
+			*pdirty = dirty;
+			*pthresh = threshold;
+			*pbg_thresh = background;
+			return true;
+		}
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+bool mem_cgroup_dirty_exceeded(struct inode *inode)
+{
+	struct address_space *mapping = inode->i_mapping;
+	struct mem_cgroup *memcg;
+	unsigned long dirty;
+
+	if (mapping->backing_dev_info->dirty_exceeded)
+		return true;
+
+	rcu_read_lock();
+	memcg = rcu_dereference(mapping->i_memcg);
+	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
+		if (!memcg->dirty_threshold) {
+			memcg = NULL;
+			break;
+		}
+		if (!memcg->dirty_exceeded)
+			continue;
+		dirty = percpu_counter_read_positive(&memcg->nr_dirty) +
+			percpu_counter_read_positive(&memcg->nr_writeback);
+		if (dirty > memcg->dirty_background)
+			break;
+		memcg->dirty_exceeded = 0;
+	}
+	rcu_read_unlock();
+
+	return memcg != NULL;
 }
 
 /*

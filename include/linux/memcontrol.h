@@ -178,6 +178,9 @@ void mem_cgroup_dec_page_dirty(struct address_space *mapping);
 void mem_cgroup_inc_page_writeback(struct address_space *mapping);
 void mem_cgroup_dec_page_writeback(struct address_space *mapping);
 void mem_cgroup_forget_mapping(struct address_space *mapping);
+bool mem_cgroup_dirty_limits(struct address_space *mapping, unsigned long *dirty,
+			     unsigned long *thresh, unsigned long *bg_thresh);
+bool mem_cgroup_dirty_exceeded(struct inode *inode);
 
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
@@ -352,6 +355,9 @@ static inline void mem_cgroup_dec_page_dirty(struct address_space *mapping) {}
 static inline void mem_cgroup_inc_page_writeback(struct address_space *mapping) {}
 static inline void mem_cgroup_dec_page_writeback(struct address_space *mapping) {}
 static inline void mem_cgroup_forget_mapping(struct address_space *mapping) {}
+static inline bool mem_cgroup_dirty_limits(struct address_space *mapping, unsigned long *dirty,
+			     unsigned long *thresh, unsigned long *bg_thresh) { return false; }
+static inline bool mem_cgroup_dirty_exceeded(struct inode *inode) { return false; }
 
 #endif /* CONFIG_MEMCG */
 

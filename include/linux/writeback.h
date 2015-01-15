@@ -47,6 +47,7 @@ enum wb_reason {
 	WB_REASON_LAPTOP_TIMER,
 	WB_REASON_FREE_MORE_MEM,
 	WB_REASON_FS_FREE_SPACE,
+	WB_REASON_FOR_MEMCG,
 	/*
 	 * There is no bdi forker thread any more and works are done
 	 * by emergency worker, however, this is TPs userland visible
