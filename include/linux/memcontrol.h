@@ -173,6 +173,12 @@ static inline void mem_cgroup_count_vm_event(struct mm_struct *mm,
 void mem_cgroup_split_huge_fixup(struct page *head);
 #endif
 
+void mem_cgroup_inc_page_dirty(struct address_space *mapping);
+void mem_cgroup_dec_page_dirty(struct address_space *mapping);
+void mem_cgroup_inc_page_writeback(struct address_space *mapping);
+void mem_cgroup_dec_page_writeback(struct address_space *mapping);
+void mem_cgroup_forget_mapping(struct address_space *mapping);
+
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
 
@@ -340,6 +346,13 @@ static inline
 void mem_cgroup_count_vm_event(struct mm_struct *mm, enum vm_event_item idx)
 {
 }
+
+static inline void mem_cgroup_inc_page_dirty(struct address_space *mapping) {}
+static inline void mem_cgroup_dec_page_dirty(struct address_space *mapping) {}
+static inline void mem_cgroup_inc_page_writeback(struct address_space *mapping) {}
+static inline void mem_cgroup_dec_page_writeback(struct address_space *mapping) {}
+static inline void mem_cgroup_forget_mapping(struct address_space *mapping) {}
+
 #endif /* CONFIG_MEMCG */
 
 enum {

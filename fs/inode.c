@@ -559,6 +559,7 @@ static void evict(struct inode *inode)
 		bd_forget(inode);
 	if (S_ISCHR(inode->i_mode) && inode->i_cdev)
 		cd_forget(inode);
+	mem_cgroup_forget_mapping(&inode->i_data);
 
 	remove_inode_hash(inode);
 

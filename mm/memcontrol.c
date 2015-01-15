@@ -361,6 +361,9 @@ struct mem_cgroup {
 	struct list_head event_list;
 	spinlock_t event_list_lock;
 
+	struct percpu_counter nr_dirty;
+	struct percpu_counter nr_writeback;
+
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
 };
@@ -3743,6 +3746,11 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		seq_printf(m, "total_%s %llu\n", mem_cgroup_lru_names[i], val);
 	}
 
+	seq_printf(m, "fs_dirty %llu\n", PAGE_SIZE *
+			percpu_counter_sum_positive(&memcg->nr_dirty));
+	seq_printf(m, "fs_writeback %llu\n", PAGE_SIZE *
+			percpu_counter_sum_positive(&memcg->nr_writeback));
+
 #ifdef CONFIG_DEBUG_VM
 	{
 		int nid, zid;
@@ -4577,6 +4585,10 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (!memcg)
 		return NULL;
 
+	if (percpu_counter_init(&memcg->nr_dirty, 0, GFP_KERNEL) ||
+	    percpu_counter_init(&memcg->nr_writeback, 0, GFP_KERNEL))
+		goto out_free;
+
 	memcg->stat = alloc_percpu(struct mem_cgroup_stat_cpu);
 	if (!memcg->stat)
 		goto out_free;
@@ -4584,6 +4596,8 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	return memcg;
 
 out_free:
+	percpu_counter_destroy(&memcg->nr_dirty);
+	percpu_counter_destroy(&memcg->nr_writeback);
 	kfree(memcg);
 	return NULL;
 }
@@ -4608,6 +4622,8 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	for_each_node(node)
 		free_mem_cgroup_per_zone_info(memcg, node);
 
+	percpu_counter_destroy(&memcg->nr_dirty);
+	percpu_counter_destroy(&memcg->nr_writeback);
 	free_percpu(memcg->stat);
 
 	disarm_static_keys(memcg);
@@ -4750,6 +4766,31 @@ mem_cgroup_css_online(struct cgroup_subsys_state *css)
 	return 0;
 }
 
+static void mem_cgroup_switch_one_sb(struct super_block *sb, void *_memcg)
+{
+	struct mem_cgroup *memcg = _memcg;
+	struct mem_cgroup *target = parent_mem_cgroup(memcg);
+	struct address_space *mapping;
+	struct inode *inode;
+	extern spinlock_t inode_sb_list_lock;
+
+	spin_lock(&inode_sb_list_lock);
+	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
+		mapping = inode->i_mapping;
+		if (likely(rcu_access_pointer(mapping->i_memcg) != memcg))
+			continue;
+		spin_lock_irq(&mapping->tree_lock);
+		if (rcu_access_pointer(mapping->i_memcg) == memcg) {
+			rcu_assign_pointer(mapping->i_memcg, target);
+			if (target)
+				css_get(&target->css);
+			css_put(&memcg->css);
+		}
+		spin_unlock_irq(&mapping->tree_lock);
+	}
+	spin_unlock(&inode_sb_list_lock);
+}
+
 static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
@@ -4766,6 +4807,9 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 		schedule_work(&event->remove);
 	}
 	spin_unlock(&memcg->event_list_lock);
+
+	/* Switch all ->i_memcg references to the parent cgroup */
+	iterate_supers(mem_cgroup_switch_one_sb, memcg);
 
 	vmpressure_cleanup(&memcg->vmpressure);
 }
@@ -5819,6 +5863,80 @@ void mem_cgroup_migrate(struct page *oldpage, struct page *newpage,
 		unlock_page_lru(oldpage, isolated);
 
 	commit_charge(newpage, memcg, lrucare);
+}
+
+static inline struct mem_cgroup *
+mem_cgroup_from_mapping(struct address_space *mapping)
+{
+	return rcu_dereference_check(mapping->i_memcg,
+			lockdep_is_held(&mapping->tree_lock));
+}
+
+void mem_cgroup_inc_page_dirty(struct address_space *mapping)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_mapping(mapping);
+
+	if (mem_cgroup_disabled())
+		return;
+
+	/* Remember context at dirtying first page in the mapping */
+	if (unlikely(!(mapping_tags(mapping) &
+	    (BIT(PAGECACHE_TAG_DIRTY) | BIT(PAGECACHE_TAG_WRITEBACK))))) {
+		struct mem_cgroup *task_memcg;
+
+		rcu_read_lock();
+		task_memcg = mem_cgroup_from_task(current);
+		if (task_memcg != memcg) {
+			if (memcg)
+				css_put(&memcg->css);
+			css_get(&task_memcg->css);
+			memcg = task_memcg;
+			lockdep_assert_held(&mapping->tree_lock);
+			rcu_assign_pointer(mapping->i_memcg, memcg);
+		}
+		rcu_read_unlock();
+	}
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg))
+		percpu_counter_inc(&memcg->nr_dirty);
+}
+
+void mem_cgroup_dec_page_dirty(struct address_space *mapping)
+{
+	struct mem_cgroup *memcg;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_mapping(mapping);
+	for (; memcg; memcg = parent_mem_cgroup(memcg))
+		percpu_counter_dec(&memcg->nr_dirty);
+	rcu_read_unlock();
+}
+
+void mem_cgroup_inc_page_writeback(struct address_space *mapping)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_mapping(mapping);
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg))
+		percpu_counter_inc(&memcg->nr_writeback);
+}
+
+void mem_cgroup_dec_page_writeback(struct address_space *mapping)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_mapping(mapping);
+
+	for (; memcg; memcg = parent_mem_cgroup(memcg))
+		percpu_counter_dec(&memcg->nr_writeback);
+}
+
+void mem_cgroup_forget_mapping(struct address_space *mapping)
+{
+	struct mem_cgroup *memcg;
+
+	memcg = rcu_dereference_protected(mapping->i_memcg, 1);
+	if (memcg) {
+		css_put(&memcg->css);
+		RCU_INIT_POINTER(mapping->i_memcg, NULL);
+	}
 }
 
 /*

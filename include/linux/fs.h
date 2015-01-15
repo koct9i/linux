@@ -413,6 +413,9 @@ struct address_space {
 	spinlock_t		private_lock;	/* for use by the address_space */
 	struct list_head	private_list;	/* ditto */
 	void			*private_data;	/* ditto */
+#ifdef CONFIG_MEMCG
+	struct mem_cgroup __rcu	*i_memcg;	/* protected by ->tree_lock */
+#endif
 } __attribute__((aligned(sizeof(long))));
 	/*
 	 * On most architectures that alignment is already the case; but
@@ -486,6 +489,14 @@ static inline void i_mmap_lock_read(struct address_space *mapping)
 static inline void i_mmap_unlock_read(struct address_space *mapping)
 {
 	up_read(&mapping->i_mmap_rwsem);
+}
+
+/*
+ * Returns bitmap with all page-cache radix-tree tags
+ */
+static inline unsigned mapping_tags(struct address_space *mapping)
+{
+	return (__force unsigned)mapping->page_tree.gfp_mask >> __GFP_BITS_SHIFT;
 }
 
 /*
