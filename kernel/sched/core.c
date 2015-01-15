@@ -65,6 +65,7 @@
 #include <linux/unistd.h>
 #include <linux/pagemap.h>
 #include <linux/hrtimer.h>
+#include <linux/task_work.h>
 #include <linux/tick.h>
 #include <linux/debugfs.h>
 #include <linux/ctype.h>
@@ -8377,3 +8378,68 @@ void dump_cpu_task(int cpu)
 	pr_info("Task dump for CPU %d:\n", cpu);
 	sched_show_task(cpu_curr(cpu));
 }
+
+#define DELAY_INJECTION_SLACK_NS	(NSEC_PER_SEC / 50)
+
+static enum hrtimer_restart delay_injection_wakeup(struct hrtimer *timer)
+{
+	struct hrtimer_sleeper *t =
+		container_of(timer, struct hrtimer_sleeper, timer);
+	struct task_struct *task = t->task;
+
+	t->task = NULL;
+	if (task)
+		wake_up_state(task, TASK_PARKED);
+
+	return HRTIMER_NORESTART;
+}
+
+/*
+ * Here delayed task sleeps in 'P'arked state.
+ */
+static void delay_injection_sleep(struct callback_head *head)
+{
+	struct task_struct *task = current;
+	struct hrtimer_sleeper t;
+
+	head->func = NULL;
+	__set_task_state(task, TASK_WAKEKILL | TASK_PARKED);
+	hrtimer_init_on_stack(&t.timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	hrtimer_set_expires_range_ns(&t.timer, current->delay_injection_target,
+				     DELAY_INJECTION_SLACK_NS);
+
+	t.timer.function = delay_injection_wakeup;
+	t.task = task;
+
+	hrtimer_start_expires(&t.timer, HRTIMER_MODE_ABS);
+	if (!hrtimer_active(&t.timer))
+		t.task = NULL;
+
+	if (likely(t.task))
+		schedule();
+
+	hrtimer_cancel(&t.timer);
+	destroy_hrtimer_on_stack(&t.timer);
+
+	__set_task_state(task, TASK_RUNNING);
+}
+
+/*
+ * inject_delay - injects delay before returning into userspace
+ * @target: absolute monotomic timestamp to sleeping for,
+ *	    task will not return into userspace before this time
+ */
+void inject_delay(ktime_t target)
+{
+	struct task_struct *task = current;
+
+	if (ktime_after(target, task->delay_injection_target)) {
+		task->delay_injection_target = target;
+		if (!task->delay_injection_work.func) {
+			init_task_work(&task->delay_injection_work,
+					delay_injection_sleep);
+			task_work_add(task, &task->delay_injection_work, true);
+		}
+	}
+}
+EXPORT_SYMBOL(inject_delay);
