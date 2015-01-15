@@ -181,6 +181,8 @@ void mem_cgroup_forget_mapping(struct address_space *mapping);
 bool mem_cgroup_dirty_limits(struct address_space *mapping, unsigned long *dirty,
 			     unsigned long *thresh, unsigned long *bg_thresh);
 bool mem_cgroup_dirty_exceeded(struct inode *inode);
+void mem_cgroup_poke_writeback(struct address_space *mapping,
+			       struct mem_cgroup *memcg);
 
 #else /* CONFIG_MEMCG */
 struct mem_cgroup;
@@ -358,6 +360,8 @@ static inline void mem_cgroup_forget_mapping(struct address_space *mapping) {}
 static inline bool mem_cgroup_dirty_limits(struct address_space *mapping, unsigned long *dirty,
 			     unsigned long *thresh, unsigned long *bg_thresh) { return false; }
 static inline bool mem_cgroup_dirty_exceeded(struct inode *inode) { return false; }
+static inline void mem_cgroup_poke_writeback(struct address_space *mapping,
+					     struct mem_cgroup *memcg) { }
 
 #endif /* CONFIG_MEMCG */
 

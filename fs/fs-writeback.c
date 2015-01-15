@@ -484,7 +484,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	 */
 	spin_lock(&inode->i_lock);
 
-	dirty = inode->i_state & I_DIRTY;
+	dirty = inode->i_state & (I_DIRTY | I_DIRTY_SHARED);
 	inode->i_state &= ~I_DIRTY;
 
 	/*
@@ -501,7 +501,7 @@ __writeback_single_inode(struct inode *inode, struct writeback_control *wbc)
 	smp_mb();
 
 	if (mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
-		inode->i_state |= I_DIRTY_PAGES;
+		inode->i_state |= I_DIRTY_PAGES | (dirty & I_DIRTY_SHARED);
 
 	spin_unlock(&inode->i_lock);
 

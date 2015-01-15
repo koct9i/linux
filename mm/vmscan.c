@@ -1013,6 +1013,10 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				inc_zone_page_state(page, NR_VMSCAN_IMMEDIATE);
 				SetPageReclaim(page);
 
+				if (!global_reclaim(sc))
+					mem_cgroup_poke_writeback(mapping,
+							sc->target_mem_cgroup);
+
 				goto keep_locked;
 			}
 

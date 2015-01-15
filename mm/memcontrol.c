@@ -6064,6 +6064,9 @@ bool mem_cgroup_dirty_exceeded(struct inode *inode)
 	if (mapping->backing_dev_info->dirty_exceeded)
 		return true;
 
+	if (inode->i_state & I_DIRTY_SHARED)
+		return true;
+
 	rcu_read_lock();
 	memcg = rcu_dereference(mapping->i_memcg);
 	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
@@ -6082,6 +6085,23 @@ bool mem_cgroup_dirty_exceeded(struct inode *inode)
 	rcu_read_unlock();
 
 	return memcg != NULL;
+}
+
+void mem_cgroup_poke_writeback(struct address_space *mapping,
+			       struct mem_cgroup *memcg)
+{
+	struct inode *inode = mapping->host;
+
+	if (rcu_access_pointer(mapping->i_memcg) == memcg ||
+	    !memcg->dirty_exceeded)
+		return;
+
+	if (inode->i_state & (I_DIRTY_PAGES|I_DIRTY_SHARED) == I_DIRTY_PAGES) {
+		spin_lock(&inode->i_lock);
+		if (inode->i_state & I_DIRTY_PAGES)
+			inode->i_state |= I_DIRTY_SHARED;
+		spin_unlock(&inode->i_lock);
+	}
 }
 
 /*
