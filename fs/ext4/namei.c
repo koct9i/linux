@@ -2934,6 +2934,17 @@ err_drop_inode:
 	return err;
 }
 
+static bool ext4_check_project(struct inode *dir, struct inode *inode)
+{
+	/*
+	 * Allow link/rename only into directory with matched project or
+	 * if direcorty belongs to default 'zero' project. Without feature
+	 * RO_COMPAT_PROJECT all i_project are 'invalid' thus always equal.
+	 */
+	return projid_eq(EXT4_I(dir)->i_project, EXT4_I(inode)->i_project) ||
+	       from_kprojid(current_user_ns(), EXT4_I(dir)->i_project) == 0;
+}
+
 static int ext4_link(struct dentry *old_dentry,
 		     struct inode *dir, struct dentry *dentry)
 {
@@ -2943,6 +2954,9 @@ static int ext4_link(struct dentry *old_dentry,
 
 	if (inode->i_nlink >= EXT4_LINK_MAX)
 		return -EMLINK;
+
+	if (!ext4_check_project(dir, inode))
+		return -EXDEV;
 
 	dquot_initialize(dir);
 
@@ -3260,6 +3274,11 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (new.inode && !test_opt(new.dir->i_sb, NO_AUTO_DA_ALLOC))
 		ext4_alloc_da_blocks(old.inode);
 
+	if (!ext4_check_project(new.dir, old.inode)) {
+		retval = -EXDEV;
+		goto end_rename;
+	}
+
 	credits = (2 * EXT4_DATA_TRANS_BLOCKS(old.dir->i_sb) +
 		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 2);
 	if (!(flags & RENAME_WHITEOUT)) {
@@ -3435,6 +3454,12 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	/* RENAME_EXCHANGE case: old *and* new must both exist */
 	if (!new.bh || le32_to_cpu(new.de->inode) != new.inode->i_ino)
 		goto end_rename;
+
+	if (!ext4_check_project(new.dir, old.inode) ||
+	    !ext4_check_project(old.dir, new.inode)) {
+		retval = -EXDEV;
+		goto end_rename;
+	}
 
 	handle = ext4_journal_start(old.dir, EXT4_HT_DIR,
 		(2 * EXT4_DATA_TRANS_BLOCKS(old.dir->i_sb) +

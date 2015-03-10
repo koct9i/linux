@@ -1035,9 +1035,54 @@ static int bdev_try_to_free_page(struct super_block *sb, struct page *page,
 	return try_to_free_buffers(page);
 }
 
+static kprojid_t ext4_get_project(struct inode *inode)
+{
+	/* Without feature RO_COMPAT_PROJECT all i_project are set to invalid */
+	return EXT4_I(inode)->i_project;
+}
+
+static int ext4_set_project(struct inode *inode, kprojid_t project)
+{
+	struct super_block *sb = inode->i_sb;
+	struct ext4_iloc iloc;
+	handle_t *handle;
+	int ret;
+
+	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_PROJECT))
+		return -EOPNOTSUPP;
+
+	if (projid_eq(EXT4_I(inode)->i_project, project))
+		return 0;
+
+	dquot_initialize(inode);
+
+	handle = ext4_journal_start(inode, EXT4_HT_INODE, 1 +
+					EXT4_QUOTA_INIT_BLOCKS(sb) +
+					EXT4_QUOTA_DEL_BLOCKS(sb));
+	if (IS_ERR(handle))
+		return PTR_ERR(handle);
+
+	ret = dquot_transfer_project(inode, project);
+	if (ret)
+		goto out;
+
+	ret = ext4_reserve_inode_write(handle, inode, &iloc);
+	if (!ret) {
+		inode->i_ctime = ext4_current_time(inode);
+		EXT4_I(inode)->i_project = project;
+		ret = ext4_mark_iloc_dirty(handle, inode, &iloc);
+	}
+	if (IS_SYNC(inode))
+		ext4_handle_sync(handle);
+out:
+	ext4_journal_stop(handle);
+
+	return ret;
+}
+
 #ifdef CONFIG_QUOTA
-#define QTYPE2NAME(t) ((t) == USRQUOTA ? "user" : "group")
-#define QTYPE2MOPT(on, t) ((t) == USRQUOTA?((on)##USRJQUOTA):((on)##GRPJQUOTA))
+static char *quotatypes[] = INITQFNAMES;
+#define QTYPE2NAME(t) (quotatypes[t])
 
 static int ext4_write_dquot(struct dquot *dquot);
 static int ext4_acquire_dquot(struct dquot *dquot);
@@ -1103,6 +1148,8 @@ static const struct super_operations ext4_sops = {
 	.get_dquots	= ext4_get_dquots,
 #endif
 	.bdev_try_to_free_page = bdev_try_to_free_page,
+	.get_project	= ext4_get_project,
+	.set_project	= ext4_set_project,
 };
 
 static const struct export_operations ext4_export_ops = {
@@ -3965,6 +4012,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	else
 		sb->s_qcop = &ext4_qctl_operations;
 	sb->s_quota_types = QTYPE_MASK_USR | QTYPE_MASK_GRP;
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_PROJECT))
+		sb->s_quota_types |= QTYPE_MASK_PRJ;
 #endif
 	memcpy(sb->s_uuid, es->s_uuid, sizeof(es->s_uuid));
 
@@ -5269,7 +5318,8 @@ static int ext4_quota_enable(struct super_block *sb, int type, int format_id,
 	struct inode *qf_inode;
 	unsigned long qf_inums[EXT4_MAXQUOTAS] = {
 		le32_to_cpu(EXT4_SB(sb)->s_es->s_usr_quota_inum),
-		le32_to_cpu(EXT4_SB(sb)->s_es->s_grp_quota_inum)
+		le32_to_cpu(EXT4_SB(sb)->s_es->s_grp_quota_inum),
+		le32_to_cpu(EXT4_SB(sb)->s_es->s_prj_quota_inum),
 	};
 
 	BUG_ON(!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_QUOTA));
@@ -5297,7 +5347,8 @@ static int ext4_enable_quotas(struct super_block *sb)
 	int type, err = 0;
 	unsigned long qf_inums[EXT4_MAXQUOTAS] = {
 		le32_to_cpu(EXT4_SB(sb)->s_es->s_usr_quota_inum),
-		le32_to_cpu(EXT4_SB(sb)->s_es->s_grp_quota_inum)
+		le32_to_cpu(EXT4_SB(sb)->s_es->s_grp_quota_inum),
+		le32_to_cpu(EXT4_SB(sb)->s_es->s_prj_quota_inum),
 	};
 
 	sb_dqopt(sb)->flags |= DQUOT_QUOTA_SYS_FILE;

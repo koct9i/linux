@@ -3968,6 +3968,14 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	}
 	i_uid_write(inode, i_uid);
 	i_gid_write(inode, i_gid);
+
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_PROJECT)) {
+		projid_t project = le32_to_cpu(raw_inode->i_project);
+
+		ei->i_project = make_kprojid(&init_user_ns, project);
+	} else
+		ei->i_project = INVALID_PROJID;
+
 	set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
 
 	ext4_clear_state_flags(ei);	/* Only relevant on 32-bit archs */
@@ -4293,6 +4301,13 @@ static int ext4_do_update_inode(handle_t *handle,
 		raw_inode->i_uid_high = 0;
 		raw_inode->i_gid_high = 0;
 	}
+
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_PROJECT)) {
+		projid_t i_project = from_kprojid(&init_user_ns, ei->i_project);
+
+		raw_inode->i_project = cpu_to_le32(i_project);
+	}
+
 	raw_inode->i_links_count = cpu_to_le16(inode->i_nlink);
 
 	EXT4_INODE_SET_XTIME(i_ctime, inode, raw_inode);

@@ -756,6 +756,9 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
 		inode->i_gid = dir->i_gid;
 	} else
 		inode_init_owner(inode, dir, mode);
+
+	ei->i_project = EXT4_I(dir)->i_project;
+
 	dquot_initialize(inode);
 
 	if (!goal)

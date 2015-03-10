@@ -212,6 +212,8 @@ struct ext4_io_submit {
 /* First non-reserved inode for old ext4 filesystems */
 #define EXT4_GOOD_OLD_FIRST_INO	11
 
+#define EXT4_PRJ_QUOTA_INO	11	/* Project quota inode */
+
 /*
  * Maximal count of links to a file
  */
@@ -653,7 +655,7 @@ struct ext4_inode {
 	__le32	i_generation;	/* File version (for NFS) */
 	__le32	i_file_acl_lo;	/* File ACL */
 	__le32	i_size_high;
-	__le32	i_obso_faddr;	/* Obsoleted fragment address */
+	__le32	i_project;	/* Formerly i_faddr, fragment address */
 	union {
 		struct {
 			__le16	l_i_blocks_high; /* were l_i_reserved1 */
@@ -939,6 +941,7 @@ struct ext4_inode_info {
 
 	/* Precomputed uuid+inum+igen checksum for seeding inode checksums */
 	__u32 i_csum_seed;
+	kprojid_t i_project;
 };
 
 /*
@@ -1169,7 +1172,8 @@ struct ext4_super_block {
 	__le32	s_overhead_clusters;	/* overhead blocks/clusters in fs */
 	__le32	s_backup_bgs[2];	/* groups with sparse_super2 SBs */
 	__u8	s_encrypt_algos[4];	/* Encryption algorithms in use  */
-	__le32	s_reserved[105];	/* Padding to the end of the block */
+	__le32	s_prj_quota_inum;	/* inode for tracking project quota */
+	__le32	s_reserved[104];	/* Padding to the end of the block */
 	__le32	s_checksum;		/* crc32c(superblock) */
 };
 
@@ -1184,7 +1188,7 @@ struct ext4_super_block {
 #define EXT4_MF_FS_ABORTED	0x0002	/* Fatal error detected */
 
 /* Number of quota types we support */
-#define EXT4_MAXQUOTAS 2
+#define EXT4_MAXQUOTAS 3
 
 /*
  * fourth extended-fs super-block data in memory
@@ -1373,6 +1377,7 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
 	return ino == EXT4_ROOT_INO ||
 		ino == EXT4_USR_QUOTA_INO ||
 		ino == EXT4_GRP_QUOTA_INO ||
+		ino == EXT4_PRJ_QUOTA_INO ||
 		ino == EXT4_BOOT_LOADER_INO ||
 		ino == EXT4_JOURNAL_INO ||
 		ino == EXT4_RESIZE_INO ||
@@ -1536,6 +1541,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
  */
 #define EXT4_FEATURE_RO_COMPAT_METADATA_CSUM	0x0400
 #define EXT4_FEATURE_RO_COMPAT_READONLY		0x1000
+#define EXT4_FEATURE_RO_COMPAT_PROJECT		0x2000
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
@@ -1586,7 +1592,8 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE |\
 					 EXT4_FEATURE_RO_COMPAT_BIGALLOC |\
 					 EXT4_FEATURE_RO_COMPAT_METADATA_CSUM|\
-					 EXT4_FEATURE_RO_COMPAT_QUOTA)
+					 EXT4_FEATURE_RO_COMPAT_QUOTA |\
+					 EXT4_FEATURE_RO_COMPAT_PROJECT)
 
 /*
  * Default values for user and/or group using reserved blocks
