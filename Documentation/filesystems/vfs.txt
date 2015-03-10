@@ -230,6 +230,8 @@ struct super_operations {
         ssize_t (*quota_write)(struct super_block *, int, const char *, size_t, loff_t);
 	int (*nr_cached_objects)(struct super_block *);
 	void (*free_cached_objects)(struct super_block *, int);
+	kprojid_t (*get_project)(struct inode *);
+	int (*set_project)(struct inode *, kprojid_t);
 };
 
 All methods are called without any locks being held, unless otherwise
@@ -318,6 +320,12 @@ or bottom half).
 	appropriate scan batch sizes without having to worry about whether
 	implementations will cause holdoff problems due to large scan batch
 	sizes.
+
+  get_project: called by the ioctl and quota code to get project id of an inode.
+	Method should return INVALID_PROJID if feature isn't supported.
+
+  set_project: called by the ioctl to set project id for an inode.
+	This is called with i_mutex held.
 
 Whoever sets up the inode is responsible for filling in the "i_op" field. This
 is a pointer to a "struct inode_operations" which describes the methods that

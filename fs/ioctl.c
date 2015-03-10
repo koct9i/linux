@@ -9,6 +9,7 @@
 #include <linux/capability.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/mount.h>
 #include <linux/security.h>
 #include <linux/export.h>
 #include <linux/uaccess.h>
@@ -545,6 +546,57 @@ static int ioctl_fsthaw(struct file *filp)
 	return thaw_super(sb);
 }
 
+static int ioctl_getproject(struct file *filp, projid_t __user *argp)
+{
+	struct user_namespace *ns = current_user_ns();
+	struct inode *inode = file_inode(filp);
+	struct super_block *sb = inode->i_sb;
+	kprojid_t kprojid;
+	projid_t projid;
+
+	if (!sb->s_op->get_project)
+		return -EOPNOTSUPP;
+	kprojid = sb->s_op->get_project(inode);
+	if (!projid_valid(kprojid))
+		return -EOPNOTSUPP;
+	projid = from_kprojid(ns, kprojid);
+	if (projid == (projid_t)-1)
+		return -EACCES;
+	return put_user(projid, argp);
+}
+
+static int ioctl_setproject(struct file *filp, projid_t __user *argp)
+{
+	struct user_namespace *ns = current_user_ns();
+	struct inode *inode = file_inode(filp);
+	struct super_block *sb = inode->i_sb;
+	kprojid_t kprojid;
+	projid_t projid;
+	int ret;
+
+	if (!sb->s_op->set_project)
+		return -EOPNOTSUPP;
+	if (ns != &init_user_ns)
+		return -EPERM;
+	ret = get_user(projid, argp);
+	if (ret)
+		return ret;
+	kprojid = make_kprojid(ns, projid);
+	if (!projid_valid(kprojid))
+		return -EACCES;
+	ret = mnt_want_write_file(filp);
+	if (ret)
+		return ret;
+	mutex_lock(&inode->i_mutex);
+	if (inode_owner_or_capable(inode))
+		ret = sb->s_op->set_project(inode, kprojid);
+	else
+		ret = -EPERM;
+	mutex_unlock(&inode->i_mutex);
+	mnt_drop_write_file(filp);
+	return ret;
+}
+
 /*
  * When you add any new common ioctls to the switches above and below
  * please update compat_sys_ioctl() too.
@@ -596,6 +648,12 @@ int do_vfs_ioctl(struct file *filp, unsigned int fd, unsigned int cmd,
 
 	case FS_IOC_FIEMAP:
 		return ioctl_fiemap(filp, arg);
+
+	case FS_IOC_GETPROJECT:
+		return ioctl_getproject(filp, argp);
+
+	case FS_IOC_SETPROJECT:
+		return ioctl_setproject(filp, argp);
 
 	case FIGETBSZ:
 		return put_user(inode->i_sb->s_blocksize, argp);

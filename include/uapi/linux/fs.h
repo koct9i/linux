@@ -170,6 +170,9 @@ struct inodes_stat_t {
 #define FS_IOC32_GETVERSION		_IOR('v', 1, int)
 #define FS_IOC32_SETVERSION		_IOW('v', 2, int)
 
+#define FS_IOC_GETPROJECT		_IOR('f', 20, unsigned)
+#define FS_IOC_SETPROJECT		_IOW('f', 21, unsigned)
+
 /*
  * Inode flags (FS_IOC_GETFLAGS / FS_IOC_SETFLAGS)
  */

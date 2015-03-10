@@ -1655,6 +1655,8 @@ struct super_operations {
 				  struct shrink_control *);
 	long (*free_cached_objects)(struct super_block *,
 				    struct shrink_control *);
+	kprojid_t (*get_project)(struct inode *);
+	int (*set_project)(struct inode *, kprojid_t);
 };
 
 /*
