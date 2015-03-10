@@ -1838,7 +1838,8 @@ EXPORT_SYMBOL(dquot_free_inode);
  * We are holding reference on transfer_from & transfer_to, no need to
  * protect them by srcu_read_lock().
  */
-int __dquot_transfer(struct inode *inode, struct dquot **transfer_to)
+static int do_dquot_transfer(struct inode *inode,
+		struct dquot **transfer_to, int flags)
 {
 	qsize_t space, cur_space;
 	qsize_t rsv_space = 0;
@@ -1879,10 +1880,10 @@ int __dquot_transfer(struct inode *inode, struct dquot **transfer_to)
 		is_valid[cnt] = 1;
 		transfer_from[cnt] = i_dquot(inode)[cnt];
 		ret = check_idq(transfer_to[cnt], 1, &warn_to[cnt]);
-		if (ret)
+		if (ret && !(flags & DQUOT_TRANSFER_NOFAIL))
 			goto over_quota;
 		ret = check_bdq(transfer_to[cnt], space, 0, &warn_to[cnt]);
-		if (ret)
+		if (ret && !(flags & DQUOT_TRANSFER_NOFAIL))
 			goto over_quota;
 	}
 
@@ -1932,6 +1933,11 @@ over_quota:
 	flush_warnings(warn_to);
 	return ret;
 }
+
+int __dquot_transfer(struct inode *inode, struct dquot **transfer_to)
+{
+	return do_dquot_transfer(inode, transfer_to, 0);
+}
 EXPORT_SYMBOL(__dquot_transfer);
 
 /* Wrapper for transferring ownership of an inode for uid/gid only
@@ -1960,7 +1966,7 @@ EXPORT_SYMBOL(dquot_transfer);
 /*
  * Helper function for transferring inode into another project.
  */
-int dquot_transfer_project(struct inode *inode, kprojid_t projid)
+int dquot_transfer_project(struct inode *inode, kprojid_t projid, int flags)
 {
 	struct dquot *transfer_to[MAXQUOTAS] = {};
 	struct super_block *sb = inode->i_sb;
@@ -1969,7 +1975,7 @@ int dquot_transfer_project(struct inode *inode, kprojid_t projid)
 	if (!sb_has_quota_active(sb, PRJQUOTA))
 		return 0;
 	transfer_to[PRJQUOTA] = dqget(sb, make_kqid_projid(projid));
-	ret = __dquot_transfer(inode, transfer_to);
+	ret = do_dquot_transfer(inode, transfer_to, flags);
 	dqput_all(transfer_to);
 	return ret;
 }

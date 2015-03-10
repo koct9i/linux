@@ -1062,7 +1062,7 @@ static int ext4_set_project(struct inode *inode, kprojid_t project)
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
-	ret = dquot_transfer_project(inode, project);
+	ret = dquot_transfer_project(inode, project, 0);
 	if (ret)
 		goto out;
 

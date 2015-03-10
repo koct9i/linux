@@ -9,9 +9,17 @@
 
 #include <linux/fs.h>
 
+/*
+ * Flags for functions __dquot_alloc_space() and __dquot_free_space()
+ */
 #define DQUOT_SPACE_WARN	0x1
 #define DQUOT_SPACE_RESERVE	0x2
 #define DQUOT_SPACE_NOFAIL	0x4
+
+/*
+ * Flags for functions dquot_transfer_*
+ */
+#define DQUOT_TRANSFER_NOFAIL	0x1
 
 static inline struct quota_info *sb_dqopt(struct super_block *sb)
 {
@@ -104,7 +112,7 @@ int dquot_set_dqblk(struct super_block *sb, struct kqid id,
 
 int __dquot_transfer(struct inode *inode, struct dquot **transfer_to);
 int dquot_transfer(struct inode *inode, struct iattr *iattr);
-int dquot_transfer_project(struct inode *inode, kprojid_t projid);
+int dquot_transfer_project(struct inode *inode, kprojid_t projid, int flags);
 
 static inline struct mem_dqinfo *sb_dqinfo(struct super_block *sb, int type)
 {

@@ -3029,6 +3029,7 @@ struct ext4_renament {
 	struct inode *inode;
 	bool is_dir;
 	int dir_nlink_delta;
+	bool transfer_project;
 
 	/* entry for "dentry" */
 	struct buffer_head *bh;
@@ -3274,13 +3275,23 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (new.inode && !test_opt(new.dir->i_sb, NO_AUTO_DA_ALLOC))
 		ext4_alloc_da_blocks(old.inode);
 
-	if (!ext4_check_project(new.dir, old.inode)) {
-		retval = -EXDEV;
-		goto end_rename;
-	}
-
 	credits = (2 * EXT4_DATA_TRANS_BLOCKS(old.dir->i_sb) +
 		   EXT4_INDEX_EXTRA_TRANS_BLOCKS + 2);
+
+	if (!ext4_check_project(new.dir, old.inode)) {
+		/*
+		 * Shortcut for moving files across projects: inode with one
+		 * hardlink can be tranferred as is without making a copy.
+		 */
+		if (!S_ISDIR(old.inode->i_mode) && old.inode->i_nlink == 1) {
+			credits += 2 * EXT4_QUOTA_TRANS_BLOCKS(old.dir->i_sb);
+			old.transfer_project = true;
+		} else {
+			retval = -EXDEV;
+			goto end_rename;
+		}
+	}
+
 	if (!(flags & RENAME_WHITEOUT)) {
 		handle = ext4_journal_start(old.dir, EXT4_HT_DIR, credits);
 		if (IS_ERR(handle)) {
@@ -3293,6 +3304,15 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 		if (IS_ERR(whiteout)) {
 			retval = PTR_ERR(whiteout);
 			whiteout = NULL;
+			goto end_rename;
+		}
+	}
+
+	if (old.transfer_project) {
+		retval = dquot_transfer_project(old.inode,
+				EXT4_I(new.dir)->i_project, 0);
+		if (retval) {
+			old.transfer_project = false;
 			goto end_rename;
 		}
 	}
@@ -3355,6 +3375,8 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	 * rename.
 	 */
 	old.inode->i_ctime = ext4_current_time(old.inode);
+	if (old.transfer_project)
+		EXT4_I(old.inode)->i_project = EXT4_I(new.dir)->i_project;
 	ext4_mark_inode_dirty(handle, old.inode);
 
 	if (!whiteout) {
@@ -3395,6 +3417,9 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	retval = 0;
 
 end_rename:
+	if (retval && old.transfer_project)
+		dquot_transfer_project(old.inode, EXT4_I(old.inode)->i_project,
+				       DQUOT_TRANSFER_NOFAIL);
 	brelse(old.dir_bh);
 	brelse(old.bh);
 	brelse(new.bh);
@@ -3425,6 +3450,7 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	};
 	u8 new_file_type;
 	int retval;
+	int credits;
 
 	dquot_initialize(old.dir);
 	dquot_initialize(new.dir);
@@ -3455,19 +3481,54 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (!new.bh || le32_to_cpu(new.de->inode) != new.inode->i_ino)
 		goto end_rename;
 
-	if (!ext4_check_project(new.dir, old.inode) ||
-	    !ext4_check_project(old.dir, new.inode)) {
-		retval = -EXDEV;
-		goto end_rename;
+	credits = 2 * EXT4_DATA_TRANS_BLOCKS(old.dir->i_sb) +
+		  2 * EXT4_INDEX_EXTRA_TRANS_BLOCKS + 2;
+
+	if (!ext4_check_project(new.dir, old.inode)) {
+		if (!S_ISDIR(old.inode->i_mode) && old.inode->i_nlink == 1) {
+			credits += 2 * EXT4_QUOTA_TRANS_BLOCKS(old.dir->i_sb);
+			old.transfer_project = true;
+		} else {
+			retval = -EXDEV;
+			goto end_rename;
+		}
 	}
 
-	handle = ext4_journal_start(old.dir, EXT4_HT_DIR,
-		(2 * EXT4_DATA_TRANS_BLOCKS(old.dir->i_sb) +
-		 2 * EXT4_INDEX_EXTRA_TRANS_BLOCKS + 2));
+	if (!ext4_check_project(old.dir, new.inode)) {
+		if (!S_ISDIR(new.inode->i_mode) && new.inode->i_nlink == 1) {
+			credits += 2 * EXT4_QUOTA_TRANS_BLOCKS(old.dir->i_sb);
+			new.transfer_project = true;
+		} else {
+			old.transfer_project = false;
+			retval = -EXDEV;
+			goto end_rename;
+		}
+	}
+
+	handle = ext4_journal_start(old.dir, EXT4_HT_DIR, credits);
 	if (IS_ERR(handle)) {
 		retval = PTR_ERR(handle);
 		handle = NULL;
 		goto end_rename;
+	}
+
+	if (old.transfer_project) {
+		retval = dquot_transfer_project(old.inode,
+				EXT4_I(new.dir)->i_project, 0);
+		if (retval) {
+			old.transfer_project = false;
+			new.transfer_project = false;
+			goto end_rename;
+		}
+	}
+
+	if (new.transfer_project) {
+		retval = dquot_transfer_project(new.inode,
+				EXT4_I(old.dir)->i_project, 0);
+		if (retval) {
+			new.transfer_project = false;
+			goto end_rename;
+		}
 	}
 
 	if (IS_DIRSYNC(old.dir) || IS_DIRSYNC(new.dir))
@@ -3514,6 +3575,10 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	 */
 	old.inode->i_ctime = ext4_current_time(old.inode);
 	new.inode->i_ctime = ext4_current_time(new.inode);
+	if (old.transfer_project)
+		EXT4_I(old.inode)->i_project = EXT4_I(new.dir)->i_project;
+	if (new.transfer_project)
+		EXT4_I(new.inode)->i_project = EXT4_I(old.dir)->i_project;
 	ext4_mark_inode_dirty(handle, old.inode);
 	ext4_mark_inode_dirty(handle, new.inode);
 
@@ -3532,6 +3597,12 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	retval = 0;
 
 end_rename:
+	if (retval && old.transfer_project)
+		dquot_transfer_project(old.inode, EXT4_I(old.inode)->i_project,
+				       DQUOT_TRANSFER_NOFAIL);
+	if (retval && new.transfer_project)
+		dquot_transfer_project(new.inode, EXT4_I(new.inode)->i_project,
+				       DQUOT_TRANSFER_NOFAIL);
 	brelse(old.dir_bh);
 	brelse(new.dir_bh);
 	brelse(old.bh);
