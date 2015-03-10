@@ -278,6 +278,7 @@ struct vfs_cap_data {
 /* Override resource limits. Set resource limits. */
 /* Override quota limits. */
 /* Override reserved space on ext2 filesystem */
+/* Modify file project id if protected_projects = 1 */
 /* Modify data journaling mode on ext3 filesystem (uses journaling
    resources) */
 /* NOTE: ext2 honors fsuid when checking for resource overrides, so

@@ -34,6 +34,7 @@ Currently, these files are in /proc/sys/fs:
 - overflowgid
 - protected_hardlinks
 - protected_symlinks
+- protected_projects
 - suid_dumpable
 - super-max
 - super-nr
@@ -196,6 +197,21 @@ a sticky world-writable directory, or when the uid of the symlink and
 follower match, or when the directory owner matches the symlink's owner.
 
 This protection is based on the restrictions in Openwall and grsecurity.
+
+==============================================================
+
+protected_projects:
+
+Project id allows to enforce disk quota for several subtrees or individual
+files on the filesystem. Historically changing project id was a unprivileged
+operation and file owner is able to set any project id.
+
+When set to "0", changing project id is unprivileged operation. File owner
+can set any project id mapped in current user namespace.
+
+When set to "1" changing project id requires capability CAP_SYS_RESOURCE
+in current user namespace. Also defining project id mapping for nested
+user namespace requires CAP_SYS_RESOURCE in the parent user namespace.
 
 ==============================================================
 

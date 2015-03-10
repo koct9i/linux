@@ -565,6 +565,8 @@ static int ioctl_getproject(struct file *filp, projid_t __user *argp)
 	return put_user(projid, argp);
 }
 
+int sysctl_protected_projects;
+
 static int ioctl_setproject(struct file *filp, projid_t __user *argp)
 {
 	struct user_namespace *ns = current_user_ns();
@@ -576,7 +578,9 @@ static int ioctl_setproject(struct file *filp, projid_t __user *argp)
 
 	if (!sb->s_op->set_project)
 		return -EOPNOTSUPP;
-	if (ns != &init_user_ns)
+	if (sysctl_protected_projects ?
+	    !ns_capable(ns, CAP_SYS_RESOURCE) :
+	    (ns != &init_user_ns))
 		return -EPERM;
 	ret = get_user(projid, argp);
 	if (ret)

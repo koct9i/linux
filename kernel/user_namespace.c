@@ -807,8 +807,8 @@ ssize_t proc_projid_map_write(struct file *file, const char __user *buf,
 	if ((seq_ns != ns) && (seq_ns != ns->parent))
 		return -EPERM;
 
-	/* Anyone can set any valid project id no capability needed */
-	return map_write(file, buf, size, ppos, -1,
+	return map_write(file, buf, size, ppos,
+			 sysctl_protected_projects ? CAP_SYS_RESOURCE : -1,
 			 &ns->projid_map, &ns->parent->projid_map);
 }
 
