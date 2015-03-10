@@ -8,6 +8,7 @@
 #define _LINUX_QUOTAOPS_
 
 #include <linux/fs.h>
+#include <linux/statfs.h>
 
 /*
  * Flags for functions __dquot_alloc_space() and __dquot_free_space()
@@ -93,6 +94,7 @@ int dquot_commit_info(struct super_block *sb, int type);
 int dquot_mark_dquot_dirty(struct dquot *dquot);
 
 int dquot_file_open(struct inode *inode, struct file *file);
+int dquot_mangle_statfs(struct dentry *dentry, struct kstatfs *buf);
 
 int dquot_enable(struct inode *inode, int type, int format_id,
 	unsigned int flags);
@@ -282,6 +284,11 @@ static inline int dquot_resume(struct super_block *sb, int type)
 }
 
 #define dquot_file_open		generic_file_open
+
+static inline int dquot_mangle_statfs(struct dentry *d, struct kstatfs *buf)
+{
+	return 0;
+}
 
 static inline int dquot_writeback_dquots(struct super_block *sb, int type)
 {

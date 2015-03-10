@@ -5154,7 +5154,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_fsid.val[0] = fsid & 0xFFFFFFFFUL;
 	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
 
-	return 0;
+	return dquot_mangle_statfs(dentry, buf);
 }
 
 /* Helper function for writing quotas on sync - we need to start transaction

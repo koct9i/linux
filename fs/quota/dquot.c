@@ -2025,6 +2025,57 @@ int dquot_file_open(struct inode *inode, struct file *file)
 EXPORT_SYMBOL(dquot_file_open);
 
 /*
+ * Update statfs results accourding to project quota limits.
+ */
+int dquot_mangle_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	u64 blimit = 0, ilimit = 0, busage, iusage, bfree, ifree;
+	struct inode *inode = dentry->d_inode;
+	struct super_block *sb = dentry->d_sb;
+	struct dquot *dquot;
+
+	if (!sb_has_quota_limits_enabled(sb, PRJQUOTA))
+		return 0;
+
+	__dquot_initialize(inode, PRJQUOTA);
+
+	spin_lock(&dq_data_lock);
+	dquot = i_dquot(inode)[PRJQUOTA];
+	if (dquot) {
+		struct mem_dqblk *dm = &(dquot->dq_dqb);
+
+		blimit = dm->dqb_bsoftlimit ?: dm->dqb_bhardlimit;
+		busage = dm->dqb_curspace + dm->dqb_rsvspace;
+		ilimit = dm->dqb_isoftlimit ?: dm->dqb_ihardlimit;
+		iusage = dm->dqb_curinodes;
+	}
+	spin_unlock(&dq_data_lock);
+
+	if (blimit) {
+		blimit = div_u64(blimit, buf->f_bsize);
+		busage = div_u64(busage, buf->f_bsize);
+		bfree = (blimit <= busage) ? 0 : (blimit - busage);
+		if (buf->f_blocks > blimit)
+			buf->f_blocks = blimit;
+		if (buf->f_bfree > bfree)
+			buf->f_bfree = bfree;
+		if (buf->f_bavail > bfree)
+			buf->f_bavail = bfree;
+	}
+
+	if (ilimit) {
+		ifree = (ilimit <= iusage) ? 0 : (ilimit - iusage);
+		if (buf->f_files > ilimit)
+			buf->f_files = ilimit;
+		if (buf->f_ffree > ifree)
+			buf->f_ffree = ifree;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(dquot_mangle_statfs);
+
+/*
  * Turn quota off on a device. type == -1 ==> quotaoff for all types (umount)
  */
 int dquot_disable(struct super_block *sb, int type, unsigned int flags)
