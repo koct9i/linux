@@ -30,11 +30,15 @@ static int check_quotactl_permission(struct super_block *sb, int type, int cmd,
 	case Q_XGETQSTATV:
 	case Q_XQUOTASYNC:
 		break;
-	/* allow to query information for dquots we "own" */
+	/*
+	 * Allow to query information for user/group dquots we "own".
+	 * Allow querying project quota present in our user-namespace.
+	 */
 	case Q_GETQUOTA:
 	case Q_XGETQUOTA:
 		if ((type == USRQUOTA && uid_eq(current_euid(), make_kuid(current_user_ns(), id))) ||
-		    (type == GRPQUOTA && in_egroup_p(make_kgid(current_user_ns(), id))))
+		    (type == GRPQUOTA && in_egroup_p(make_kgid(current_user_ns(), id))) ||
+		    (type == PRJQUOTA && projid_valid(make_kprojid(current_user_ns(), id))))
 			break;
 		/*FALLTHROUGH*/
 	default:

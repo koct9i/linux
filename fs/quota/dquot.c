@@ -1159,8 +1159,8 @@ static int need_print_warning(struct dquot_warn *warn)
 			return uid_eq(current_fsuid(), warn->w_dq_id.uid);
 		case GRPQUOTA:
 			return in_group_p(warn->w_dq_id.gid);
-		case PRJQUOTA:	/* Never taken... Just make gcc happy */
-			return 0;
+		case PRJQUOTA:
+			return 1;
 	}
 	return 0;
 }
@@ -1417,6 +1417,13 @@ static void __dquot_initialize(struct inode *inode, int type)
 			break;
 		case GRPQUOTA:
 			qid = make_kqid_gid(inode->i_gid);
+			break;
+		case PRJQUOTA:
+			if (sb->s_op->get_project)
+				qid = make_kqid_projid(sb->s_op->
+						get_project(inode));
+			else
+				qid = make_kqid_invalid(PRJQUOTA);
 			break;
 		}
 		got[cnt] = dqget(sb, qid);
@@ -1951,6 +1958,24 @@ int dquot_transfer(struct inode *inode, struct iattr *iattr)
 EXPORT_SYMBOL(dquot_transfer);
 
 /*
+ * Helper function for transferring inode into another project.
+ */
+int dquot_transfer_project(struct inode *inode, kprojid_t projid)
+{
+	struct dquot *transfer_to[MAXQUOTAS] = {};
+	struct super_block *sb = inode->i_sb;
+	int ret;
+
+	if (!sb_has_quota_active(sb, PRJQUOTA))
+		return 0;
+	transfer_to[PRJQUOTA] = dqget(sb, make_kqid_projid(projid));
+	ret = __dquot_transfer(inode, transfer_to);
+	dqput_all(transfer_to);
+	return ret;
+}
+EXPORT_SYMBOL(dquot_transfer_project);
+
+/*
  * Write info of quota file to disk
  */
 int dquot_commit_info(struct super_block *sb, int type)
@@ -2162,6 +2187,10 @@ static int vfs_load_quota_inode(struct inode *inode, int type, int format_id,
 		goto out_fmt;
 	}
 	if (!sb->s_op->quota_write || !sb->s_op->quota_read) {
+		error = -EINVAL;
+		goto out_fmt;
+	}
+	if (type == PRJQUOTA && !sb->s_op->get_project) {
 		error = -EINVAL;
 		goto out_fmt;
 	}

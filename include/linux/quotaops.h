@@ -104,6 +104,7 @@ int dquot_set_dqblk(struct super_block *sb, struct kqid id,
 
 int __dquot_transfer(struct inode *inode, struct dquot **transfer_to);
 int dquot_transfer(struct inode *inode, struct iattr *iattr);
+int dquot_transfer_project(struct inode *inode, kprojid_t projid);
 
 static inline struct mem_dqinfo *sb_dqinfo(struct super_block *sb, int type)
 {
