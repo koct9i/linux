@@ -24,7 +24,7 @@ using IProute2/ip utility.
 
 	ip link add link <master-dev> <slave-dev> type ipvlan mode { l2 | L3 }
 
-	e.g. ip link add link ipvl0 eth0 type ipvlan mode l2
+	e.g. ip link add link eth0 ipvl0 type ipvlan mode l2
 
 
 4. Operating modes:
@@ -40,6 +40,15 @@ default namespace.
 slave device and packets are switched and queued to the master device to send
 out. In this mode the slaves will RX/TX multicast and broadcast (if applicable)
 as well.
+
+	In L2 mode slave devices receive Router Advertisements from the network
+and perform autoconfiguration as well as master device. Each port has unique
+16-bit device id which is used for filling octets 4-5 of Modified EUI-64.
+That gives 65533 addresses (FF-FE used by master, FF-FF/00-00 reserved/not used).
+
+	Also lower half of IPv6 address could be set as interface token:
+
+	ip token set ::aaaa:bbbb:cccc:dddd dev ipvl0
 
 4.2 L3 mode:
 	In this mode TX processing upto L3 happens on the stack instance attached

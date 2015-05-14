@@ -53,6 +53,7 @@ static int ipvlan_port_create(struct net_device *dev)
 	INIT_LIST_HEAD(&port->ipvlans);
 	for (idx = 0; idx < IPVLAN_HASH_SIZE; idx++)
 		INIT_HLIST_HEAD(&port->hlhead[idx]);
+	ida_init(&port->ida);
 
 	skb_queue_head_init(&port->backlog);
 	INIT_WORK(&port->wq, ipvlan_process_multicast);
@@ -78,6 +79,7 @@ static void ipvlan_port_destroy(struct net_device *dev)
 	netdev_rx_handler_unregister(dev);
 	cancel_work_sync(&port->wq);
 	__skb_queue_purge(&port->backlog);
+	ida_destroy(&port->ida);
 	kfree_rcu(port, rcu);
 }
 
@@ -481,6 +483,18 @@ static int ipvlan_link_new(struct net *src_net, struct net_device *dev,
 	 */
 	memcpy(dev->dev_addr, phy_dev->dev_addr, ETH_ALEN);
 
+	if (port->mode == IPVLAN_MODE_L2) {
+		/*
+		 * IPv6 addrconf uses it to produce unique addresses,
+		 * see function addrconf_ifid_eui48.
+		 */
+		err = ida_simple_get(&port->ida, 1, 0xFFFE, GFP_KERNEL);
+		if (err > 0)
+			dev->dev_id = err;
+		else if (err != -ENOSPC)
+			goto ipvlan_destroy_port;
+	}
+
 	dev->priv_flags |= IFF_IPVLAN_SLAVE;
 
 	port->count += 1;
@@ -516,6 +530,11 @@ static void ipvlan_link_delete(struct net_device *dev, struct list_head *head)
 		kfree_rcu(addr, rcu);
 	}
 	ipvlan_addr_unlock_bh(ipvlan);
+
+	if (dev->dev_id) {
+		ida_simple_remove(&ipvlan->port->ida, dev->dev_id);
+		dev->dev_id = 0;
+	}
 
 	list_del_rcu(&ipvlan->pnode);
 	unregister_netdevice_queue(dev, head);

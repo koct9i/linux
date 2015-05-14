@@ -98,6 +98,7 @@ struct ipvl_port {
 	int			count;
 	u16			mode;
 	spinlock_t		addr_lock;
+	struct ida		ida;
 };
 
 static inline struct ipvl_port *ipvlan_port_get_rcu(const struct net_device *d)
