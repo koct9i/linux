@@ -700,10 +700,13 @@ static bool ovl_is_allowed_fs_type(struct dentry *root)
 
 	/*
 	 * We don't support:
+	 *  - overlayfs
 	 *  - automount filesystems
 	 *  - filesystems with revalidate (FIXME for lower layer)
 	 *  - filesystems with case insensitive names
 	 */
+	if (root->d_sb->s_op == &ovl_super_operations)
+		return false;
 	if (dop &&
 	    (dop->d_manage || dop->d_automount ||
 	     dop->d_revalidate || dop->d_weak_revalidate ||
