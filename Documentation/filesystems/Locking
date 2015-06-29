@@ -67,7 +67,7 @@ prototypes:
 				struct file *, unsigned open_flag,
 				umode_t create_mode, int *opened);
 	int (*tmpfile) (struct inode *, struct dentry *, umode_t);
-	int (*dentry_open)(struct dentry *, struct file *, const struct cred *);
+	int (*dentry_open)(struct path *, struct file *, const struct cred *);
 
 locking rules:
 	all may block

@@ -923,6 +923,13 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_put_lowerpath;
 		}
 
+		/*
+		 * Drop noexec at upper mount if allowed. We'll check
+		 * MNT_NOEXEC at overlayfs mount in ovl_dentry_open().
+		 */
+		if (!(ufs->upper_mnt->mnt_flags & MNT_LOCK_NOEXEC))
+			ufs->upper_mnt->mnt_flags &= ~MNT_NOEXEC;
+
 		ufs->workdir = ovl_workdir_create(ufs->upper_mnt, workpath.dentry);
 		err = PTR_ERR(ufs->workdir);
 		if (IS_ERR(ufs->workdir)) {
@@ -950,6 +957,13 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		 * will fail instead of modifying lower fs.
 		 */
 		mnt->mnt_flags |= MNT_READONLY;
+
+		/*
+		 * Drop noexec at lower mount if allowed. We'll check
+		 * MNT_NOEXEC at overlayfs mount in ovl_dentry_open().
+		 */
+		if (!(mnt->mnt_flags & MNT_LOCK_NOEXEC))
+			mnt->mnt_flags &= ~MNT_NOEXEC;
 
 		ufs->lower_mnt[ufs->numlower] = mnt;
 		ufs->numlower++;

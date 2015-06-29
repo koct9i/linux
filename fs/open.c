@@ -865,7 +865,7 @@ int vfs_open(const struct path *path, struct file *filp,
 	struct inode *inode = path->dentry->d_inode;
 
 	if (inode->i_op->dentry_open)
-		return inode->i_op->dentry_open(path->dentry, filp, cred);
+		return inode->i_op->dentry_open(path, filp, cred);
 	else {
 		filp->f_path = *path;
 		return do_dentry_open(filp, NULL, cred);

@@ -10,6 +10,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/xattr.h>
+#include <linux/mount.h>
 #include "overlayfs.h"
 
 static int ovl_copy_up_last(struct dentry *dentry, struct iattr *attr,
@@ -337,13 +338,22 @@ static bool ovl_open_need_copy_up(int flags, enum ovl_path_type type,
 	return true;
 }
 
-static int ovl_dentry_open(struct dentry *dentry, struct file *file,
-		    const struct cred *cred)
+static int ovl_dentry_open(const struct path *path, struct file *file,
+			   const struct cred *cred)
 {
+	struct dentry *dentry = path->dentry;
 	int err;
 	struct path realpath;
 	enum ovl_path_type type;
 	bool want_write = false;
+
+	/*
+	 * After opening file->f_path.mnt points to private lower/upper mount.
+	 * Here is the last chance to check flags at overlayfs mount.
+	 */
+	if ((file->f_flags & __FMODE_EXEC) &&
+	    (path->mnt->mnt_flags & MNT_NOEXEC))
+		return -EACCES;
 
 	type = ovl_path_real(dentry, &realpath);
 	if (ovl_open_need_copy_up(file->f_flags, type, realpath.dentry)) {
