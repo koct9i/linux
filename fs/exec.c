@@ -1289,7 +1289,8 @@ static void bprm_fill_uid(struct linux_binprm *bprm)
 	bprm->cred->euid = current_euid();
 	bprm->cred->egid = current_egid();
 
-	if (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID)
+	if ((bprm->file->f_mode & FMODE_NOSUID) ||
+	    (bprm->file->f_path.mnt->mnt_flags & MNT_NOSUID))
 		return;
 
 	if (task_no_new_privs(current))

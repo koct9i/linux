@@ -373,6 +373,10 @@ static int ovl_dentry_open(const struct path *path, struct file *file,
 	}
 
 	err = vfs_open(&realpath, file, cred);
+
+	if (path->mnt->mnt_flags & MNT_NOSUID)
+		file->f_mode |= FMODE_NOSUID;
+
 out_drop_write:
 	if (want_write)
 		ovl_drop_write(dentry);

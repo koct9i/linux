@@ -930,6 +930,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		if (!(ufs->upper_mnt->mnt_flags & MNT_LOCK_NOEXEC))
 			ufs->upper_mnt->mnt_flags &= ~MNT_NOEXEC;
 
+		if (!(ufs->upper_mnt->mnt_flags & MNT_LOCK_NOSUID))
+			ufs->upper_mnt->mnt_flags &= ~MNT_NOSUID;
+
 		ufs->workdir = ovl_workdir_create(ufs->upper_mnt, workpath.dentry);
 		err = PTR_ERR(ufs->workdir);
 		if (IS_ERR(ufs->workdir)) {
@@ -964,6 +967,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		 */
 		if (!(mnt->mnt_flags & MNT_LOCK_NOEXEC))
 			mnt->mnt_flags &= ~MNT_NOEXEC;
+
+		if (!(mnt->mnt_flags & MNT_LOCK_NOSUID))
+			mnt->mnt_flags &= ~MNT_NOSUID;
 
 		ufs->lower_mnt[ufs->numlower] = mnt;
 		ufs->numlower++;
