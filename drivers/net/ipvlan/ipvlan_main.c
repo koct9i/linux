@@ -56,6 +56,7 @@ static int ipvlan_port_create(struct net_device *dev)
 
 	skb_queue_head_init(&port->backlog);
 	INIT_WORK(&port->wq, ipvlan_process_multicast);
+	spin_lock_init(&port->addr_lock);
 
 	err = netdev_rx_handler_register(dev, ipvlan_handle_frame, port);
 	if (err)
@@ -153,8 +154,10 @@ static int ipvlan_open(struct net_device *dev)
 	else
 		dev->flags &= ~IFF_NOARP;
 
+	ipvlan_addr_lock_bh(ipvlan);
 	list_for_each_entry(addr, &ipvlan->addrs, anode)
 		ipvlan_ht_addr_add(ipvlan, addr);
+	ipvlan_addr_unlock_bh(ipvlan);
 
 	return dev_uc_add(phy_dev, phy_dev->dev_addr);
 }
@@ -170,8 +173,10 @@ static int ipvlan_stop(struct net_device *dev)
 
 	dev_uc_del(phy_dev, phy_dev->dev_addr);
 
+	ipvlan_addr_lock_bh(ipvlan);
 	list_for_each_entry(addr, &ipvlan->addrs, anode)
 		ipvlan_ht_addr_del(addr);
+	ipvlan_addr_unlock_bh(ipvlan);
 
 	return 0;
 }
@@ -504,11 +509,13 @@ static void ipvlan_link_delete(struct net_device *dev, struct list_head *head)
 	struct ipvl_dev *ipvlan = netdev_priv(dev);
 	struct ipvl_addr *addr, *next;
 
+	ipvlan_addr_lock_bh(ipvlan);
 	list_for_each_entry_safe(addr, next, &ipvlan->addrs, anode) {
 		ipvlan_ht_addr_del(addr);
 		list_del(&addr->anode);
 		kfree_rcu(addr, rcu);
 	}
+	ipvlan_addr_unlock_bh(ipvlan);
 
 	list_del_rcu(&ipvlan->pnode);
 	unregister_netdevice_queue(dev, head);
@@ -609,15 +616,21 @@ static int ipvlan_add_addr6(struct ipvl_dev *ipvlan, struct in6_addr *ip6_addr)
 {
 	struct ipvl_addr *addr;
 
+	ipvlan_addr_lock_bh(ipvlan);
+
 	if (ipvlan_addr_busy(ipvlan->port, ip6_addr, true)) {
 		netif_err(ipvlan, ifup, ipvlan->dev,
 			  "Failed to add IPv6=%pI6c addr for %s intf\n",
 			  ip6_addr, ipvlan->dev->name);
+		ipvlan_addr_unlock_bh(ipvlan);
 		return -EINVAL;
 	}
+
 	addr = kzalloc(sizeof(struct ipvl_addr), GFP_ATOMIC);
-	if (!addr)
+	if (!addr) {
+		ipvlan_addr_unlock_bh(ipvlan);
 		return -ENOMEM;
+	}
 
 	addr->master = ipvlan;
 	memcpy(&addr->ip6addr, ip6_addr, sizeof(struct in6_addr));
@@ -631,6 +644,8 @@ static int ipvlan_add_addr6(struct ipvl_dev *ipvlan, struct in6_addr *ip6_addr)
 	if (netif_running(ipvlan->dev))
 		ipvlan_ht_addr_add(ipvlan, addr);
 
+	ipvlan_addr_unlock_bh(ipvlan);
+
 	return 0;
 }
 
@@ -638,12 +653,14 @@ static void ipvlan_del_addr6(struct ipvl_dev *ipvlan, struct in6_addr *ip6_addr)
 {
 	struct ipvl_addr *addr;
 
+	ipvlan_addr_lock_bh(ipvlan);
 	addr = ipvlan_find_addr(ipvlan, ip6_addr, true);
 	if (addr) {
 		ipvlan_ht_addr_del(addr);
 		list_del(&addr->anode);
 		kfree_rcu(addr, rcu);
 	}
+	ipvlan_addr_unlock_bh(ipvlan);
 }
 
 static int ipvlan_addr6_event(struct notifier_block *unused,
@@ -677,15 +694,21 @@ static int ipvlan_add_addr4(struct ipvl_dev *ipvlan, struct in_addr *ip4_addr)
 {
 	struct ipvl_addr *addr;
 
+	ipvlan_addr_lock_bh(ipvlan);
+
 	if (ipvlan_addr_busy(ipvlan->port, ip4_addr, false)) {
 		netif_err(ipvlan, ifup, ipvlan->dev,
 			  "Failed to add IPv4=%pI4 on %s intf.\n",
 			  ip4_addr, ipvlan->dev->name);
+		ipvlan_addr_unlock_bh(ipvlan);
 		return -EINVAL;
 	}
-	addr = kzalloc(sizeof(struct ipvl_addr), GFP_KERNEL);
-	if (!addr)
+
+	addr = kzalloc(sizeof(struct ipvl_addr), GFP_ATOMIC);
+	if (!addr) {
+		ipvlan_addr_unlock_bh(ipvlan);
 		return -ENOMEM;
+	}
 
 	addr->master = ipvlan;
 	memcpy(&addr->ip4addr, ip4_addr, sizeof(struct in_addr));
@@ -699,6 +722,8 @@ static int ipvlan_add_addr4(struct ipvl_dev *ipvlan, struct in_addr *ip4_addr)
 	if (netif_running(ipvlan->dev))
 		ipvlan_ht_addr_add(ipvlan, addr);
 
+	ipvlan_addr_unlock_bh(ipvlan);
+
 	return 0;
 }
 
@@ -706,12 +731,14 @@ static void ipvlan_del_addr4(struct ipvl_dev *ipvlan, struct in_addr *ip4_addr)
 {
 	struct ipvl_addr *addr;
 
+	ipvlan_addr_lock_bh(ipvlan);
 	addr = ipvlan_find_addr(ipvlan, ip4_addr, false);
 	if (addr) {
 		ipvlan_ht_addr_del(addr);
 		list_del(&addr->anode);
 		kfree_rcu(addr, rcu);
 	}
+	ipvlan_addr_unlock_bh(ipvlan);
 }
 
 static int ipvlan_addr4_event(struct notifier_block *unused,

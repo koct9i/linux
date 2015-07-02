@@ -97,6 +97,7 @@ struct ipvl_port {
 	struct sk_buff_head	backlog;
 	int			count;
 	u16			mode;
+	spinlock_t		addr_lock;
 };
 
 static inline struct ipvl_port *ipvlan_port_get_rcu(const struct net_device *d)
@@ -107,6 +108,16 @@ static inline struct ipvl_port *ipvlan_port_get_rcu(const struct net_device *d)
 static inline struct ipvl_port *ipvlan_port_get_rtnl(const struct net_device *d)
 {
 	return rtnl_dereference(d->rx_handler_data);
+}
+
+static inline void ipvlan_addr_lock_bh(struct ipvl_dev *ipvlan)
+{
+	spin_lock_bh(&ipvlan->port->addr_lock);
+}
+
+static inline void ipvlan_addr_unlock_bh(struct ipvl_dev *ipvlan)
+{
+	spin_unlock_bh(&ipvlan->port->addr_lock);
 }
 
 void ipvlan_adjust_mtu(struct ipvl_dev *ipvlan, struct net_device *dev);

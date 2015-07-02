@@ -109,8 +109,6 @@ bool ipvlan_addr_busy(struct ipvl_port *port, void *iaddr, bool is_v6)
 {
 	struct ipvl_dev *ipvlan;
 
-	ASSERT_RTNL();
-
 	list_for_each_entry(ipvlan, &port->ipvlans, pnode) {
 		if (ipvlan_find_addr(ipvlan, iaddr, is_v6))
 			return true;
