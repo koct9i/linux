@@ -1631,10 +1631,9 @@ bool atime_needs_update(const struct path *path, struct inode *inode)
 	return true;
 }
 
-void touch_atime(const struct path *path)
+static void touch_inode_atime(const struct path *path, struct inode *inode)
 {
 	struct vfsmount *mnt = path->mnt;
-	struct inode *inode = d_inode(path->dentry);
 	struct timespec now;
 
 	if (!atime_needs_update(path, inode))
@@ -1660,7 +1659,19 @@ void touch_atime(const struct path *path)
 skip_update:
 	sb_end_write(inode->i_sb);
 }
+
+void touch_atime(const struct path *path)
+{
+	touch_inode_atime(path, d_inode(path->dentry));
+}
 EXPORT_SYMBOL(touch_atime);
+
+void file_accessed(const struct file *file)
+{
+	if (!(file->f_flags & O_NOATIME))
+		touch_inode_atime(&file->f_path, file_inode(file));
+}
+EXPORT_SYMBOL(file_accessed);
 
 /*
  * The logic we want is
