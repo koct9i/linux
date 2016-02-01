@@ -972,6 +972,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_put_workpath;
 		}
 		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
+
+		/* Copy MS_POSIXACL flag from upper layer */
+		sb->s_flags &= ~MS_POSIXACL;
+		sb->s_flags |= upperpath.mnt->mnt_sb->s_flags & MS_POSIXACL;
 	}
 	err = -ENOMEM;
 	lowertmp = kstrdup(ufs->config.lowerdir, GFP_KERNEL);
