@@ -365,6 +365,14 @@ static bool ovl_dentry_remote(struct dentry *dentry)
 		(DCACHE_OP_REVALIDATE | DCACHE_OP_WEAK_REVALIDATE);
 }
 
+static bool ovl_path_remote(const struct path *path)
+{
+	const struct dentry_operations *d_op = path->dentry->d_sb->s_d_op;
+
+	return ovl_dentry_remote(path->dentry) ||
+		(d_op && (d_op->d_revalidate || d_op->d_weak_revalidate));
+}
+
 static bool ovl_dentry_weird(struct dentry *dentry)
 {
 	return dentry->d_flags & (DCACHE_NEED_AUTOMOUNT |
@@ -837,7 +845,7 @@ static int ovl_mount_dir(const char *name, struct path *path)
 		err = ovl_mount_dir_noesc(tmp, path);
 
 		if (!err)
-			if (ovl_dentry_remote(path->dentry)) {
+			if (ovl_path_remote(path)) {
 				pr_err("overlayfs: filesystem on '%s' not supported as upperdir\n",
 				       tmp);
 				path_put(path);
@@ -866,7 +874,7 @@ static int ovl_lower_dir(const char *name, struct path *path, long *namelen,
 	*namelen = max(*namelen, statfs.f_namelen);
 	*stack_depth = max(*stack_depth, path->mnt->mnt_sb->s_stack_depth);
 
-	if (ovl_dentry_remote(path->dentry))
+	if (ovl_path_remote(path))
 		*remote = true;
 
 	return 0;
