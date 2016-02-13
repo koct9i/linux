@@ -3188,10 +3188,6 @@ void mm_drop_all_locks(struct mm_struct *mm)
  */
 void __init mmap_init(void)
 {
-	int ret;
-
-	ret = percpu_counter_init(&vm_committed_as, 0, GFP_KERNEL);
-	VM_BUG_ON(ret);
 }
 
 /*

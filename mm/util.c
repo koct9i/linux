@@ -448,7 +448,8 @@ unsigned long vm_commit_limit(void)
  * Make sure vm_committed_as in one cacheline and not cacheline shared with
  * other variables. It can be updated by several CPUs frequently.
  */
-struct percpu_counter vm_committed_as ____cacheline_aligned_in_smp;
+static atomic_long_t vm_committed_as ____cacheline_aligned_in_smp;
+static DEFINE_PER_CPU(long, vm_committed_as_percpu);
 
 /*
  * The global memory commitment made in the system can be a metric
@@ -460,9 +461,29 @@ struct percpu_counter vm_committed_as ____cacheline_aligned_in_smp;
  */
 unsigned long vm_memory_committed(void)
 {
-	return percpu_counter_read_positive(&vm_committed_as);
+	long pages = atomic_long_read(&vm_committed_as);
+
+	return pages > 0 ? pages : 0;
 }
 EXPORT_SYMBOL_GPL(vm_memory_committed);
+
+void vm_acct_memory(unsigned long pages)
+{
+	if (!this_cpu_add_max(vm_committed_as_percpu, pages,
+				vm_committed_as_batch)) {
+		pages += this_cpu_xchg(vm_committed_as_percpu, 0);
+		atomic_long_add(pages, &vm_committed_as);
+	}
+}
+
+void vm_unacct_memory(unsigned long pages)
+{
+	if (!this_cpu_sub_min(vm_committed_as_percpu, pages,
+				-vm_committed_as_batch)) {
+		pages -= this_cpu_xchg(vm_committed_as_percpu, 0);
+		atomic_long_sub(pages, &vm_committed_as);
+	}
+}
 
 /*
  * Check that a process has enough memory to allocate a new virtual
@@ -484,7 +505,7 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 {
 	long free, allowed, reserve;
 
-	VM_WARN_ONCE(percpu_counter_read(&vm_committed_as) <
+	VM_WARN_ONCE(atomic_long_read(&vm_committed_as) <
 			-(s64)vm_committed_as_batch * num_online_cpus(),
 			"memory commitment underflow");
 
@@ -553,7 +574,7 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 		allowed -= min_t(long, mm->total_vm / 32, reserve);
 	}
 
-	if (percpu_counter_read_positive(&vm_committed_as) < allowed)
+	if (atomic_long_read(&vm_committed_as) < allowed)
 		return 0;
 error:
 	vm_unacct_memory(pages);

@@ -2,7 +2,6 @@
 #define _LINUX_MMAN_H
 
 #include <linux/mm.h>
-#include <linux/percpu_counter.h>
 
 #include <linux/atomic.h>
 #include <uapi/linux/mman.h>
@@ -10,7 +9,6 @@
 extern int sysctl_overcommit_memory;
 extern int sysctl_overcommit_ratio;
 extern unsigned long sysctl_overcommit_kbytes;
-extern struct percpu_counter vm_committed_as;
 
 #ifdef CONFIG_SMP
 extern s32 vm_committed_as_batch;
@@ -19,16 +17,8 @@ extern s32 vm_committed_as_batch;
 #endif
 
 unsigned long vm_memory_committed(void);
-
-static inline void vm_acct_memory(long pages)
-{
-	__percpu_counter_add(&vm_committed_as, pages, vm_committed_as_batch);
-}
-
-static inline void vm_unacct_memory(long pages)
-{
-	vm_acct_memory(-pages);
-}
+void vm_acct_memory(unsigned long pages);
+void vm_unacct_memory(unsigned long pages);
 
 /*
  * Allow architectures to handle additional protection bits
