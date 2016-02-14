@@ -1948,11 +1948,7 @@ enum file_time_flags {
 
 extern bool atime_needs_update(const struct path *, struct inode *);
 extern void touch_atime(const struct path *);
-static inline void file_accessed(struct file *file)
-{
-	if (!(file->f_flags & O_NOATIME))
-		touch_atime(&file->f_path);
-}
+extern void file_accessed(const struct file *file);
 
 int sync_inode(struct inode *inode, struct writeback_control *wbc);
 int sync_inode_metadata(struct inode *inode, int wait);
