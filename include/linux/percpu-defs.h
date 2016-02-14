@@ -371,6 +371,48 @@ do {									\
 } while (0)
 
 /*
+ * Add unless result will be bigger than max.
+ * Returns true if operantion was done.
+ */
+#define __pcpu_add_max(stem, pcp, add, max)		\
+({	bool __ret = false;				\
+	typeof(add) __add = (add);			\
+	typeof(max) __max = (max);			\
+	typeof(pcp) __val = stem##read(pcp);		\
+	while (likely(__add <= __max - __val)) {	\
+		typeof(pcp) __old = stem##cmpxchg(pcp,	\
+				__val, __val + __add);	\
+		if (likely(__old == __val)) {		\
+			__ret = true;			\
+			break;				\
+		}					\
+		__val = __old;				\
+	}						\
+	__ret;						\
+})
+
+/*
+ * Sub unless result will be lower than min.
+ * Returns true if operantion was done.
+ */
+#define __pcpu_sub_min(stem, pcp, sub, min)		\
+({	bool __ret = false;				\
+	typeof(sub) __sub = (sub);			\
+	typeof(min) __min = (min);			\
+	typeof(pcp) __val = stem##read(pcp);		\
+	while (likely(__sub <= __val - __min)) {	\
+		typeof(pcp) __old = stem##cmpxchg(pcp,	\
+				__val, __val - __sub);	\
+		if (likely(__old == __val)) {		\
+			__ret = true;			\
+			break;				\
+		}					\
+		__val = __old;				\
+	}						\
+	__ret;						\
+})
+
+/*
  * this_cpu operations (C) 2008-2013 Christoph Lameter <cl@linux.com>
  *
  * Optimized manipulation for memory allocated through the per cpu
@@ -422,6 +464,8 @@ do {									\
 #define raw_cpu_sub_return(pcp, val)	raw_cpu_add_return(pcp, -(typeof(pcp))(val))
 #define raw_cpu_inc_return(pcp)		raw_cpu_add_return(pcp, 1)
 #define raw_cpu_dec_return(pcp)		raw_cpu_add_return(pcp, -1)
+#define raw_cpu_add_max(pcp, add, max)	__pcpu_add_max(raw_cpu_, pcp, add, max)
+#define raw_cpu_sub_min(pcp, sub, min)	__pcpu_sub_min(raw_cpu_, pcp, sub, min)
 
 /*
  * Operations for contexts that are safe from preemption/interrupts.  These
@@ -480,6 +524,16 @@ do {									\
 	raw_cpu_cmpxchg_double(pcp1, pcp2, oval1, oval2, nval1, nval2);	\
 })
 
+#define __this_cpu_add_max(pcp, add, max)				\
+({	__this_cpu_preempt_check("add_max");				\
+	raw_cpu_add_max(pcp, add, max);					\
+})
+
+#define __this_cpu_sub_min(pcp, sub, min)				\
+({	__this_cpu_preempt_check("sub_min");				\
+	raw_cpu_sub_min(pcp, sub, min);					\
+})
+
 #define __this_cpu_sub(pcp, val)	__this_cpu_add(pcp, -(typeof(pcp))(val))
 #define __this_cpu_inc(pcp)		__this_cpu_add(pcp, 1)
 #define __this_cpu_dec(pcp)		__this_cpu_sub(pcp, 1)
@@ -509,6 +563,8 @@ do {									\
 #define this_cpu_sub_return(pcp, val)	this_cpu_add_return(pcp, -(typeof(pcp))(val))
 #define this_cpu_inc_return(pcp)	this_cpu_add_return(pcp, 1)
 #define this_cpu_dec_return(pcp)	this_cpu_add_return(pcp, -1)
+#define this_cpu_add_max(pcp, add, max)	__pcpu_add_max(this_cpu_, pcp, add, max)
+#define this_cpu_sub_min(pcp, sub, min)	__pcpu_sub_min(this_cpu_, pcp, sub, min)
 
 #endif /* __ASSEMBLY__ */
 #endif /* _LINUX_PERCPU_DEFS_H */

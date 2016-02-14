@@ -13,8 +13,86 @@
 		     (long long)(expected), (long long)(expected));	\
 	} while (0)
 
+#define TEST_MINMAX_(stem, bit, val, op, c_op, arg, lim, ret)		\
+do {									\
+	stem##write(bit##_counter, val);				\
+	bit##_var = (typeof(bit))(ret ? ((val) c_op (arg)) : val);	\
+	WARN(stem##op(bit##_counter, arg, lim) != ret,			\
+		"unexpected %s", ret ? "fail" : "success");		\
+	WARN(stem##read(bit##_counter) != bit##_var,			\
+		"%s %lld %lld %lld pcp %lld != expected %lld",		\
+		#stem #op, (long long)(val), (long long)(arg),		\
+		(long long)(lim),					\
+		(long long)stem##read(bit##_counter),			\
+		(long long)bit##_var);					\
+} while (0)
+
+#define TEST_MINMAX(bit, val, op, c_op, arg, lim, ret)			\
+do {									\
+	TEST_MINMAX_(raw_cpu_, bit, val, op, c_op, arg, lim, ret);	\
+	TEST_MINMAX_(__this_cpu_, bit, val, op, c_op, arg, lim, ret);	\
+	TEST_MINMAX_(this_cpu_, bit, val, op, c_op, arg, lim, ret);	\
+} while (0)
+
+#define MINMAX_RANGE_TEST(bit, lo, hi)				\
+do {								\
+	TEST_MINMAX(bit, hi, add_max, +, 0, hi, true);		\
+	TEST_MINMAX(bit, hi-1, add_max, +, 1, hi, true);	\
+	TEST_MINMAX(bit, hi, add_max, +, 1, hi, false);		\
+	TEST_MINMAX(bit, lo, add_max, +, 1, hi, true);		\
+	TEST_MINMAX(bit, lo, add_max, +, hi - lo, hi, true);	\
+	TEST_MINMAX(bit, lo, add_max, +, hi - lo, hi-1, false);	\
+	TEST_MINMAX(bit, lo+1, add_max, +, hi - lo, hi, false);	\
+								\
+	TEST_MINMAX(bit, lo, sub_min, -, 0, lo, true);		\
+	TEST_MINMAX(bit, lo+1, sub_min, -, 1, lo, true);	\
+	TEST_MINMAX(bit, lo, sub_min, -, 1, lo, false);		\
+	TEST_MINMAX(bit, hi, sub_min, -, 1, lo, true);		\
+	TEST_MINMAX(bit, hi, sub_min, -, hi - lo, lo, true);	\
+	TEST_MINMAX(bit, hi, sub_min, -, hi - lo, lo+1, false);	\
+	TEST_MINMAX(bit, hi-1, sub_min, -, hi - lo, lo, false);	\
+} while (0)
+
+#define MINMAX_FAMILY_TEST(bit, min, max, ubit, umax)	\
+do {							\
+	MINMAX_RANGE_TEST(bit, 0, max);			\
+	MINMAX_RANGE_TEST(bit, (min + 1), 0);		\
+	MINMAX_RANGE_TEST(bit, min, -1);		\
+	MINMAX_RANGE_TEST(bit, -1, 1);			\
+	MINMAX_RANGE_TEST(bit, -100, 100);		\
+	MINMAX_RANGE_TEST(ubit, 0, umax);		\
+	MINMAX_RANGE_TEST(ubit, 100, 200);		\
+} while (0)
+
+static s8 s8_var;
+static DEFINE_PER_CPU(s8, s8_counter);
+
+static u8 u8_var;
+static DEFINE_PER_CPU(u8, u8_counter);
+
+static s16 s16_var;
+static DEFINE_PER_CPU(s16, s16_counter);
+
+static u16 u16_var;
+static DEFINE_PER_CPU(u16, u16_counter);
+
+static s32 s32_var;
+static DEFINE_PER_CPU(s32, s32_counter);
+
+static u32 u32_var;
+static DEFINE_PER_CPU(u32, u32_counter);
+
+static long long_var;
 static DEFINE_PER_CPU(long, long_counter);
+
+static unsigned long ulong_var;
 static DEFINE_PER_CPU(unsigned long, ulong_counter);
+
+static s64 s64_var;
+static DEFINE_PER_CPU(s64, s64_counter);
+
+static u64 u64_var;
+static DEFINE_PER_CPU(u64, u64_counter);
 
 static int __init percpu_test_init(void)
 {
@@ -119,6 +197,12 @@ static int __init percpu_test_init(void)
 
 	ul = __this_cpu_sub_return(ulong_counter, ui_one);
 	CHECK(ul, ulong_counter, 1);
+
+	MINMAX_FAMILY_TEST(s8, S8_MIN, S8_MAX, u8, U8_MAX);
+	MINMAX_FAMILY_TEST(s16, S16_MIN, S16_MAX, u16, U16_MAX);
+	MINMAX_FAMILY_TEST(s32, S32_MIN, S32_MAX, u32, U32_MAX);
+	MINMAX_FAMILY_TEST(long, LONG_MIN, LONG_MAX, ulong, ULONG_MAX);
+	MINMAX_FAMILY_TEST(s64, S64_MIN, S64_MAX, u64, U64_MAX);
 
 	preempt_enable();
 

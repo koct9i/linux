@@ -561,4 +561,56 @@ static inline void atomic64_andnot(long long i, atomic64_t *v)
 
 #include <asm-generic/atomic-long.h>
 
+/*
+ * atomic_add_max - add unless result will be bugger that max
+ * @var:  pointer of type atomic_t
+ * @add:  value to add
+ * @max:  maximum result
+ *
+ * Atomic value must be already lower or equal to max before call.
+ * The function returns true if operation was done and false otherwise.
+ */
+
+/*
+ * atomic_sub_min - subtract unless result will be lower than min
+ * @var:  pointer of type atomic_t
+ * @sub:  value to subtract
+ * @min:  minimal result
+ *
+ * Atomic value must be already bigger or equal to min before call.
+ * The function returns true if operation was done and false otherwise.
+ */
+
+#define ATOMIC_MINMAX_OP(nm, at, type)					\
+static inline bool nm##_add_max(at##_t *var, type add, type max)	\
+{									\
+	type val = at##_read(var);					\
+	while (likely(add <= max - val)) {				\
+		type old = at##_cmpxchg(var, val, val + add);		\
+		if (likely(old == val))					\
+			return true;					\
+		val = old;						\
+	}								\
+	return false;							\
+}									\
+									\
+static inline bool nm##_sub_min(at##_t *var, type sub, type min)	\
+{									\
+	type val = at##_read(var);					\
+	while (likely(sub <= val - min)) {				\
+		type old = at##_cmpxchg(var, val, val - sub);		\
+		if (likely(old == val))					\
+			return true;					\
+		val = old;						\
+	}								\
+	return false;							\
+}
+
+ATOMIC_MINMAX_OP(atomic, atomic, int)
+ATOMIC_MINMAX_OP(atomic_long, atomic_long, long)
+ATOMIC_MINMAX_OP(atomic64, atomic64, long long)
+
+ATOMIC_MINMAX_OP(atomic_u32, atomic, unsigned)
+ATOMIC_MINMAX_OP(atomic_u64, atomic64, unsigned long long)
+
 #endif /* _LINUX_ATOMIC_H */

@@ -45,6 +45,8 @@ typedef struct {
 #define local64_xchg(l, n)	local_xchg((&(l)->a), (n))
 #define local64_add_unless(l, _a, u) local_add_unless((&(l)->a), (_a), (u))
 #define local64_inc_not_zero(l)	local_inc_not_zero(&(l)->a)
+#define local64_add_max(l, add, max)	local_add_max(&(l)->a, add, max)
+#define local64_sub_min(l, sub, min)	local_sub_min(&(l)->a, sub, min)
 
 /* Non-atomic variants, ie. preemption disabled and won't be touched
  * in interrupt, etc.  Some archs can optimize this case well. */
@@ -83,6 +85,8 @@ typedef struct {
 #define local64_xchg(l, n)	atomic64_xchg((&(l)->a), (n))
 #define local64_add_unless(l, _a, u) atomic64_add_unless((&(l)->a), (_a), (u))
 #define local64_inc_not_zero(l)	atomic64_inc_not_zero(&(l)->a)
+#define local64_add_max(l, add, max)	atomic64_add_max(&(l)->a, add, max)
+#define local64_sub_min(l, sub, min)	atomic64_sub_min(&(l)->a, sub, min)
 
 /* Non-atomic variants, ie. preemption disabled and won't be touched
  * in interrupt, etc.  Some archs can optimize this case well. */

@@ -90,6 +90,42 @@ do {							\
 			i, (i) - one, (i) - one);	\
 } while (0)
 
+#define TEST_MINMAX(bit, val, op, c_op, arg, lim, ret)		\
+do {								\
+	atomic##bit##_set(&v, val);				\
+	r = (typeof(r))(ret ? ((val) c_op (arg)) : (val));	\
+	BUG_ON(atomic##bit##_##op(&v, arg, lim) != ret);	\
+	BUG_ON(atomic##bit##_read(&v) != r);			\
+} while (0)
+
+#define MINMAX_RANGE_TEST(bit, lo, hi)				\
+do {								\
+	TEST_MINMAX(bit, hi, add_max, +, 0, hi, true);		\
+	TEST_MINMAX(bit, hi-1, add_max, +, 1, hi, true);	\
+	TEST_MINMAX(bit, hi, add_max, +, 1, hi, false);		\
+	TEST_MINMAX(bit, lo, add_max, +, 1, hi, true);		\
+	TEST_MINMAX(bit, lo, add_max, +, hi - lo, hi, true);	\
+	TEST_MINMAX(bit, lo, add_max, +, hi - lo, hi-1, false);	\
+	TEST_MINMAX(bit, lo+1, add_max, +, hi - lo, hi, false);	\
+								\
+	TEST_MINMAX(bit, lo, sub_min, -, 0, lo, true);		\
+	TEST_MINMAX(bit, lo+1, sub_min, -, 1, lo, true);	\
+	TEST_MINMAX(bit, lo, sub_min, -, 1, lo, false);		\
+	TEST_MINMAX(bit, hi, sub_min, -, 1, lo, true);		\
+	TEST_MINMAX(bit, hi, sub_min, -, hi - lo, lo, true);	\
+	TEST_MINMAX(bit, hi, sub_min, -, hi - lo, lo+1, false);	\
+	TEST_MINMAX(bit, hi-1, sub_min, -, hi - lo, lo, false);	\
+} while (0)
+
+#define MINMAX_FAMILY_TEST(bit, min, max)	\
+do {						\
+	MINMAX_RANGE_TEST(bit, 0, max);		\
+	MINMAX_RANGE_TEST(bit, (min + 1), 0);	\
+	MINMAX_RANGE_TEST(bit, min, -1);	\
+	MINMAX_RANGE_TEST(bit, -1, 1);		\
+	MINMAX_RANGE_TEST(bit, -273, 451);	\
+} while (0)
+
 static __init void test_atomic(void)
 {
 	int v0 = 0xaaa31337;
@@ -120,6 +156,12 @@ static __init void test_atomic(void)
 	XCHG_FAMILY_TEST(, v0, v1);
 	CMPXCHG_FAMILY_TEST(, v0, v1, onestwos);
 
+	MINMAX_FAMILY_TEST(, INT_MIN, INT_MAX);
+
+#define atomic_u32_set(var, val)	atomic_set(var, val)
+#define atomic_u32_read(var)		atomic_read(var)
+	MINMAX_RANGE_TEST(_u32, 0, UINT_MAX);
+	MINMAX_RANGE_TEST(_u32, 100, 500);
 }
 
 #define INIT(c) do { atomic64_set(&v, c); r = c; } while (0)
@@ -169,6 +211,13 @@ static __init void test_atomic64(void)
 
 	XCHG_FAMILY_TEST(64, v0, v1);
 	CMPXCHG_FAMILY_TEST(64, v0, v1, v2);
+
+	MINMAX_FAMILY_TEST(64, LLONG_MIN, LLONG_MAX);
+
+#define atomic_u64_set(var, val)	atomic64_set(var, val)
+#define atomic_u64_read(var)		atomic64_read(var)
+	MINMAX_RANGE_TEST(_u64, 0, ULLONG_MAX);
+	MINMAX_RANGE_TEST(_u64, 100, 500);
 
 	INIT(v0);
 	BUG_ON(atomic64_add_unless(&v, one, v0));

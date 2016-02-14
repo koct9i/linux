@@ -149,6 +149,8 @@ static inline long local_sub_return(long i, local_t *l)
 })
 #define local_inc_not_zero(l) local_add_unless((l), 1, 0)
 
+ATOMIC_MINMAX_OP(local, local, long)
+
 /* On x86_32, these are no better than the atomic variants.
  * On x86-64 these are better than the atomic variants on SMP kernels
  * because they dont use a lock prefix.

@@ -44,6 +44,8 @@ typedef struct
 #define local_xchg(l, n) atomic_long_xchg((&(l)->a), (n))
 #define local_add_unless(l, _a, u) atomic_long_add_unless((&(l)->a), (_a), (u))
 #define local_inc_not_zero(l) atomic_long_inc_not_zero(&(l)->a)
+#define local_add_max(l, add, max)	atomic_long_add_max(&(l)->a, add, max)
+#define local_sub_min(l, sub, min)	atomic_long_sub_min(&(l)->a, sub, min)
 
 /* Non-atomic variants, ie. preemption disabled and won't be touched
  * in interrupt, etc.  Some archs can optimize this case well. */
