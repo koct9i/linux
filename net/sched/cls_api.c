@@ -401,6 +401,9 @@ static int tfilter_notify(struct net *net, struct sk_buff *oskb,
 		return -EINVAL;
 	}
 
+	if (n->nlmsg_type == RTM_GETTFILTER)
+		return rtnl_unicast(skb, net, portid);
+
 	return rtnetlink_send(skb, net, portid, RTNLGRP_TC,
 			      n->nlmsg_flags & NLM_F_ECHO);
 }

@@ -1165,7 +1165,7 @@ static int tc_get_qdisc(struct sk_buff *skb, struct nlmsghdr *n)
 		if (err != 0)
 			return err;
 	} else {
-		qdisc_notify(net, skb, n, clid, NULL, q);
+		return qdisc_notify(net, skb, n, clid, NULL, q);
 	}
 	return 0;
 }
@@ -1418,9 +1418,13 @@ static int qdisc_notify(struct net *net, struct sk_buff *oskb,
 			goto err_out;
 	}
 
-	if (skb->len)
+	if (skb->len) {
+		if (n->nlmsg_type == RTM_GETQDISC)
+			return rtnl_unicast(skb, net, portid);
+
 		return rtnetlink_send(skb, net, portid, RTNLGRP_TC,
 				      n->nlmsg_flags & NLM_F_ECHO);
+	}
 
 err_out:
 	kfree_skb(skb);
@@ -1710,6 +1714,9 @@ static int tclass_notify(struct net *net, struct sk_buff *oskb,
 		kfree_skb(skb);
 		return -EINVAL;
 	}
+
+	if (n->nlmsg_type == RTM_GETTCLASS)
+		return rtnl_unicast(skb, net, portid);
 
 	return rtnetlink_send(skb, net, portid, RTNLGRP_TC,
 			      n->nlmsg_flags & NLM_F_ECHO);
