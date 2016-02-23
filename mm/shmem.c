@@ -3162,6 +3162,11 @@ static void shmem_destroy_inodecache(void)
 	kmem_cache_destroy(shmem_inode_cachep);
 }
 
+static void shmem_freepage(struct page *page)
+{
+	dec_zone_page_state(page, NR_SHMEM);
+}
+
 static const struct address_space_operations shmem_aops = {
 	.writepage	= shmem_writepage,
 	.set_page_dirty	= __set_page_dirty_no_writeback,
@@ -3172,6 +3177,7 @@ static const struct address_space_operations shmem_aops = {
 #ifdef CONFIG_MIGRATION
 	.migratepage	= migrate_page,
 #endif
+	.freepage	= shmem_freepage,
 	.error_remove_page = generic_error_remove_page,
 };
 

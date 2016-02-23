@@ -203,8 +203,6 @@ void __delete_from_page_cache(struct page *page, void *shadow,
 	/* hugetlb pages do not participate in page cache accounting. */
 	if (!PageHuge(page))
 		__dec_zone_page_state(page, NR_FILE_PAGES);
-	if (PageSwapBacked(page))
-		__dec_zone_page_state(page, NR_SHMEM);
 	VM_BUG_ON_PAGE(page_mapped(page), page);
 
 	/*
