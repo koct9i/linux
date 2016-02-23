@@ -852,7 +852,7 @@ static int hugetlbfs_migrate_page(struct address_space *mapping,
 	rc = migrate_huge_page_move_mapping(mapping, newpage, page);
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
-	migrate_page_copy(newpage, page);
+	migrate_page_copy(newpage, page, mode);
 
 	return MIGRATEPAGE_SUCCESS;
 }

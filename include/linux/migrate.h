@@ -36,13 +36,15 @@ extern int migrate_pages(struct list_head *l, new_page_t new, free_page_t free,
 
 extern int migrate_prep(void);
 extern int migrate_prep_local(void);
-extern void migrate_page_copy(struct page *newpage, struct page *page);
+extern void migrate_page_copy(struct page *newpage, struct page *page,
+				enum migrate_mode mode);
 extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
 extern int migrate_page_move_mapping(struct address_space *mapping,
 		struct page *newpage, struct page *page,
 		struct buffer_head *head, enum migrate_mode mode,
 		int extra_count);
+extern int replace_page(struct page *newpage, struct page *page);
 #else
 
 static inline void putback_movable_pages(struct list_head *l) {}
@@ -55,10 +57,16 @@ static inline int migrate_prep(void) { return -ENOSYS; }
 static inline int migrate_prep_local(void) { return -ENOSYS; }
 
 static inline void migrate_page_copy(struct page *newpage,
-				     struct page *page) {}
+				     struct page *page,
+				     enum migrate_mode mode) {}
 
 static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page)
+{
+	return -ENOSYS;
+}
+
+static inline int replace_page(struct page *newpage, struct page *page)
 {
 	return -ENOSYS;
 }

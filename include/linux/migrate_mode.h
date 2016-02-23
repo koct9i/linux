@@ -4,15 +4,18 @@
 /*
  * MIGRATE_NOWAIT	- never block
  * MIGRATE_NOIO		- do not wait writeback
+ * MIGRATE_NOCOPY	- do not copy page content
  */
 
 enum migrate_mode {
 	MIGRATE_NOWAIT		= 1,
 	MIGRATE_NOIO		= 2,
+	MIGRATE_NOCOPY		= 4,
 
 	MIGRATE_SYNC		= 0,
 	MIGRATE_SYNC_LIGHT	= MIGRATE_NOIO,
 	MIGRATE_ASYNC		= MIGRATE_NOWAIT | MIGRATE_NOIO,
+	MIGRATE_REPLACE		= MIGRATE_ASYNC | MIGRATE_NOCOPY,
 };
 
 #endif		/* MIGRATE_MODE_H_INCLUDED */

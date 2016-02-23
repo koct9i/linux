@@ -517,14 +517,17 @@ static void copy_huge_page(struct page *dst, struct page *src)
 /*
  * Copy the page to its new location
  */
-void migrate_page_copy(struct page *newpage, struct page *page)
+void migrate_page_copy(struct page *newpage, struct page *page,
+			enum migrate_mode mode)
 {
 	int cpupid;
 
-	if (PageHuge(page) || PageTransHuge(page))
-		copy_huge_page(newpage, page);
-	else
-		copy_highpage(newpage, page);
+	if (!(mode & MIGRATE_NOCOPY)) {
+		if (PageHuge(page) || PageTransHuge(page))
+			copy_huge_page(newpage, page);
+		else
+			copy_highpage(newpage, page);
+	}
 
 	if (PageError(page))
 		SetPageError(newpage);
@@ -599,7 +602,7 @@ int migrate_page(struct address_space *mapping,
 	if (rc != MIGRATEPAGE_SUCCESS)
 		return rc;
 
-	migrate_page_copy(newpage, page);
+	migrate_page_copy(newpage, page, mode);
 	return MIGRATEPAGE_SUCCESS;
 }
 EXPORT_SYMBOL(migrate_page);
@@ -649,7 +652,7 @@ int buffer_migrate_page(struct address_space *mapping,
 
 	SetPagePrivate(newpage);
 
-	migrate_page_copy(newpage, page);
+	migrate_page_copy(newpage, page, mode);
 
 	bh = head;
 	do {
@@ -1185,6 +1188,28 @@ out:
 
 	return rc;
 }
+
+/**
+ * replace_page - replace page with a new one and new content
+ * @newpage:	page to replace with
+ * @page:	page to be replaced
+ *
+ * Both the old and new pages must be locked. This function does not add
+ * the new page to the LRU, the caller must do that.
+ */
+int replace_page(struct page *newpage, struct page *page)
+{
+	int ret = -EBUSY;
+
+	VM_BUG_ON_PAGE(!PageUptodate(newpage), newpage);
+	VM_BUG_ON_PAGE(newpage->mapping, newpage);
+
+	if (!page_mapped(page))
+		ret = move_to_new_page(newpage, page, MIGRATE_REPLACE);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(replace_page);
 
 #ifdef CONFIG_NUMA
 /*
@@ -1774,7 +1799,7 @@ int migrate_misplaced_transhuge_page(struct mm_struct *mm,
 	/* anon mapping, we can simply copy page->mapping to the new page: */
 	new_page->mapping = page->mapping;
 	new_page->index = page->index;
-	migrate_page_copy(new_page, page);
+	migrate_page_copy(new_page, page, mode);
 	WARN_ON(PageLRU(new_page));
 
 	/* Recheck the target PMD */
