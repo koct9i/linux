@@ -1105,6 +1105,8 @@ static int shmem_replace_page(struct page **pagep, gfp_t gfp,
 	if (!error) {
 		__inc_zone_page_state(newpage, NR_FILE_PAGES);
 		__dec_zone_page_state(oldpage, NR_FILE_PAGES);
+		__inc_zone_page_state(newpage, NR_SHMEM);
+		__dec_zone_page_state(oldpage, NR_SHMEM);
 	}
 	spin_unlock_irq(&swap_mapping->tree_lock);
 
