@@ -3167,6 +3167,22 @@ static void shmem_freepage(struct page *page)
 	dec_zone_page_state(page, NR_SHMEM);
 }
 
+#ifdef CONFIG_MIGRATION
+static int shmem_migratepage(struct address_space *mapping,
+			     struct page *newpage, struct page *page,
+			     enum migrate_mode mode)
+{
+	int ret = migrate_page(mapping, newpage, page, mode);
+
+	if (ret == MIGRATEPAGE_SUCCESS) {
+		dec_zone_page_state(page, NR_SHMEM);
+		inc_zone_page_state(newpage, NR_SHMEM);
+	}
+
+	return ret;
+}
+#endif
+
 static const struct address_space_operations shmem_aops = {
 	.writepage	= shmem_writepage,
 	.set_page_dirty	= __set_page_dirty_no_writeback,
@@ -3175,7 +3191,7 @@ static const struct address_space_operations shmem_aops = {
 	.write_end	= shmem_write_end,
 #endif
 #ifdef CONFIG_MIGRATION
-	.migratepage	= migrate_page,
+	.migratepage	= shmem_migratepage,
 #endif
 	.freepage	= shmem_freepage,
 	.error_remove_page = generic_error_remove_page,

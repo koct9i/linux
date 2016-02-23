@@ -416,10 +416,6 @@ int migrate_page_move_mapping(struct address_space *mapping,
 	if (newzone != oldzone) {
 		__dec_zone_state(oldzone, NR_FILE_PAGES);
 		__inc_zone_state(newzone, NR_FILE_PAGES);
-		if (PageSwapBacked(page) && !PageSwapCache(page)) {
-			__dec_zone_state(oldzone, NR_SHMEM);
-			__inc_zone_state(newzone, NR_SHMEM);
-		}
 		if (dirty && mapping_cap_account_dirty(mapping)) {
 			__dec_zone_state(oldzone, NR_FILE_DIRTY);
 			__inc_zone_state(newzone, NR_FILE_DIRTY);
