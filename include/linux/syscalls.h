@@ -898,4 +898,7 @@ asmlinkage long sys_copy_file_range(int fd_in, loff_t __user *off_in,
 
 asmlinkage long sys_mlock2(unsigned long start, size_t len, int flags);
 
+asmlinkage long sys_proc(int op, pid_t pid, pid_t start,
+			 void __user *buf, size_t size);
+
 #endif
