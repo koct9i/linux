@@ -335,6 +335,8 @@ int main(int argc, char **argv)
 	iteration_test();
 	single_thread_tests(long_run);
 
+	benchmark();
+
 	sleep(1);
 	printf("after sleep(1): %d allocated\n", nr_allocated);
 	rcu_unregister_thread();
