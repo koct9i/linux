@@ -4,16 +4,19 @@
 #include <linux/rcupdate.h>
 
 struct item {
-	unsigned long index;
+	unsigned long index, end;
 };
 
-struct item *item_create(unsigned long index);
-int __item_insert(struct radix_tree_root *root, struct item *item,
-			unsigned order);
+struct item *item_create(unsigned long index, unsigned long end);
 int item_insert(struct radix_tree_root *root, unsigned long index);
-int item_insert_order(struct radix_tree_root *root, unsigned long index,
-			unsigned order);
 int item_delete(struct radix_tree_root *root, unsigned long index);
+
+unsigned long item_order_end(unsigned long index, unsigned int order);
+int item_insert_order(struct radix_tree_root *root, unsigned long index,
+			unsigned int order);
+int item_delete_order(struct radix_tree_root *root, unsigned long index,
+			unsigned int order);
+
 struct item *item_lookup(struct radix_tree_root *root, unsigned long index);
 
 void item_check_present(struct radix_tree_root *root, unsigned long index);

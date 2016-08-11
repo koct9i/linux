@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/bitops.h>
+#include <linux/err.h>
 
 #include "test.h"
 
@@ -24,21 +25,23 @@ int item_tag_get(struct radix_tree_root *root, unsigned long index, int tag)
 	return radix_tree_tag_get(root, index, tag);
 }
 
-int __item_insert(struct radix_tree_root *root, struct item *item,
-			unsigned order)
-{
-	return __radix_tree_insert(root, item->index, order, item);
-}
-
 int item_insert(struct radix_tree_root *root, unsigned long index)
 {
-	return __item_insert(root, item_create(index), 0);
+	return radix_tree_insert(root, index, item_create(index, index));
+}
+
+unsigned long item_order_end(unsigned long index, unsigned int order)
+{
+	return index + (1ul << order) - 1;
 }
 
 int item_insert_order(struct radix_tree_root *root, unsigned long index,
-			unsigned order)
+			unsigned int order)
 {
-	return __item_insert(root, item_create(index), order);
+	unsigned long end = item_order_end(index, order);
+
+	return PTR_ERR_OR_ZERO(radix_tree_fill_range(root, index, end,
+				item_create(index, end), 0));
 }
 
 int item_delete(struct radix_tree_root *root, unsigned long index)
@@ -47,17 +50,34 @@ int item_delete(struct radix_tree_root *root, unsigned long index)
 
 	if (item) {
 		assert(item->index == index);
+		assert(item->end == index);
 		free(item);
 		return 1;
 	}
 	return 0;
 }
 
-struct item *item_create(unsigned long index)
+int item_delete_order(struct radix_tree_root *root, unsigned long index,
+			unsigned int order)
+{
+	struct item *item = radix_tree_lookup(root, index);
+	unsigned long end = item_order_end(index, order);
+
+	if (item) {
+		assert(item->index == index);
+		assert(item->end == end);
+	}
+	radix_tree_truncate_range(root, index, end);
+	free(item);
+	return !!item;
+}
+
+struct item *item_create(unsigned long index, unsigned long end)
 {
 	struct item *ret = malloc(sizeof(*ret));
 
 	ret->index = index;
+	ret->end = end;
 	return ret;
 }
 
@@ -207,10 +227,17 @@ void item_kill_tree(struct radix_tree_root *root)
 		int i;
 
 		for (i = 0; i < nfound; i++) {
-			void *ret;
+			void *item;
 
-			ret = radix_tree_delete(root, items[i]->index);
-			assert(ret == items[i]);
+			if (items[i]->index != items[i]->end) {
+				radix_tree_truncate_range(root, items[i]->index,
+								items[i]->end);
+				free(items[i]);
+				break;
+			}
+
+			item = radix_tree_delete(root, items[i]->index);
+			assert(item == items[i]);
 			free(items[i]);
 		}
 	}
