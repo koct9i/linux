@@ -319,6 +319,35 @@ static inline void radix_tree_preload_end(void)
 	preempt_enable();
 }
 
+#define RADIX_TREE_FILL_LEAVES		1 /* build full depth tree */
+#define RADIX_TREE_FILL_OVERWRITE	2 /* overwrite non-empty slots */
+#define RADIX_TREE_FILL_CLEAR_TAGS	4 /* clear all tags */
+#define RADIX_TREE_FILL_ATOMIC		8 /* play well with rcu lookup */
+
+struct radix_tree_node *
+radix_tree_fill_range(struct radix_tree_root *root, unsigned long start,
+		      unsigned long end, void *item, unsigned int flags);
+
+int radix_tree_preload_range(gfp_t gfp_mask, unsigned long start,
+			     unsigned long end, unsigned int flags);
+
+/**
+ * radix_tree_truncate_range  - remove everything in range
+ * @root:	radix tree root
+ * @start:	first index
+ * @end:	last index
+ *
+ * This function removes all items and tags within given range.
+ */
+static inline void
+radix_tree_truncate_range(struct radix_tree_root *root,
+			  unsigned long start, unsigned long end)
+{
+	radix_tree_fill_range(root, start, end, NULL,
+			      RADIX_TREE_FILL_OVERWRITE |
+			      RADIX_TREE_FILL_CLEAR_TAGS);
+}
+
 /**
  * struct radix_tree_iter - radix tree iterator state
  *
@@ -430,6 +459,23 @@ static inline __must_check
 void **radix_tree_iter_next(struct radix_tree_iter *iter)
 {
 	iter->next_index = __radix_tree_iter_add(iter, 1);
+	iter->tags = 0;
+	return NULL;
+}
+
+/**
+ * radix_tree_iter_jump - restart iterating from given index if it non-zero
+ * @iter:	iterator state
+ * @index:	next index
+ *
+ * If index is zero when iterator will stop. This protects from endless loop
+ * when index overflows after visiting last entry.
+ */
+static inline __must_check
+void **radix_tree_iter_jump(struct radix_tree_iter *iter, unsigned long index)
+{
+	iter->index = index - 1;
+	iter->next_index = index;
 	iter->tags = 0;
 	return NULL;
 }
