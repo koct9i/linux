@@ -37,8 +37,8 @@
  * 10 - exceptional entry
  * 11 - this bit combination is currently unused/reserved
  *
- * The internal entry may be a pointer to the next level in the tree, a
- * sibling entry, or an indicator that the entry in this slot has been moved
+ * The internal entry may be a pointer to the next level in the tree
+ * or an indicator that the entry in this slot has been moved
  * to another location in the tree and the lookup should be restarted.  While
  * NULL fits the 'data pointer' pattern, it means that there is no entry in
  * the tree for this index (no matter what level of the tree it is found at).
@@ -265,13 +265,7 @@ static inline void radix_tree_replace_slot(void **pslot, void *item)
 int __radix_tree_create(struct radix_tree_root *root, unsigned long index,
 			unsigned order, struct radix_tree_node **nodep,
 			void ***slotp);
-int __radix_tree_insert(struct radix_tree_root *, unsigned long index,
-			unsigned order, void *);
-static inline int radix_tree_insert(struct radix_tree_root *root,
-			unsigned long index, void *entry)
-{
-	return __radix_tree_insert(root, index, 0, entry);
-}
+int radix_tree_insert(struct radix_tree_root *, unsigned long index, void *);
 void *__radix_tree_lookup(struct radix_tree_root *root, unsigned long index,
 			  struct radix_tree_node **nodep, void ***slotp);
 void *radix_tree_lookup(struct radix_tree_root *, unsigned long);
@@ -354,7 +348,6 @@ radix_tree_truncate_range(struct radix_tree_root *root,
  * @index:	index of current slot
  * @next_index:	one beyond the last index for this chunk
  * @tags:	bit-mask for tag-iterating
- * @shift:	shift for the node that holds our slots
  *
  * This radix tree iterator works in terms of "chunks" of slots.  A chunk is a
  * subinterval of slots contained within one radix tree leaf node.  It is
@@ -367,19 +360,7 @@ struct radix_tree_iter {
 	unsigned long	index;
 	unsigned long	next_index;
 	unsigned long	tags;
-#ifdef CONFIG_RADIX_TREE_MULTIORDER
-	unsigned int	shift;
-#endif
 };
-
-static inline unsigned int iter_shift(struct radix_tree_iter *iter)
-{
-#ifdef CONFIG_RADIX_TREE_MULTIORDER
-	return iter->shift;
-#else
-	return 0;
-#endif
-}
 
 #define RADIX_TREE_ITER_TAG_MASK	0x00FF	/* tag index in lower byte */
 #define RADIX_TREE_ITER_TAGGED		0x0100	/* lookup tagged slots */
@@ -441,12 +422,6 @@ void **radix_tree_iter_retry(struct radix_tree_iter *iter)
 	return NULL;
 }
 
-static inline unsigned long
-__radix_tree_iter_add(struct radix_tree_iter *iter, unsigned long slots)
-{
-	return iter->index + (slots << iter_shift(iter));
-}
-
 /**
  * radix_tree_iter_next - resume iterating when the chunk may be invalid
  * @iter:	iterator state
@@ -458,7 +433,7 @@ __radix_tree_iter_add(struct radix_tree_iter *iter, unsigned long slots)
 static inline __must_check
 void **radix_tree_iter_next(struct radix_tree_iter *iter)
 {
-	iter->next_index = __radix_tree_iter_add(iter, 1);
+	iter->next_index = iter->index + 1;
 	iter->tags = 0;
 	return NULL;
 }
@@ -489,7 +464,7 @@ void **radix_tree_iter_jump(struct radix_tree_iter *iter, unsigned long index)
 static __always_inline long
 radix_tree_chunk_size(struct radix_tree_iter *iter)
 {
-	return (iter->next_index - iter->index) >> iter_shift(iter);
+	return iter->next_index - iter->index;
 }
 
 static inline struct radix_tree_node *entry_to_node(void *ptr)
@@ -508,6 +483,9 @@ static inline struct radix_tree_node *entry_to_node(void *ptr)
  * This function updates @iter->index in the case of a successful lookup.
  * For tagged lookup it also eats @iter->tags.
  *
+ * Please keep this fast-path as small as possible. Complicated logic is hidden
+ * inside radix_tree_next_chunk() which prepares chunks for this funciton.
+ *
  * There are several cases where 'slot' can be passed in as NULL to this
  * function.  These cases result from the use of radix_tree_iter_next() or
  * radix_tree_iter_retry().  In these cases we don't end up dereferencing
@@ -520,49 +498,24 @@ static __always_inline void **
 radix_tree_next_slot(void **slot, struct radix_tree_iter *iter, unsigned flags)
 {
 	if (flags & RADIX_TREE_ITER_TAGGED) {
-		void *canon = slot;
-
 		iter->tags >>= 1;
-		if (unlikely(!iter->tags))
-			return NULL;
-		while (IS_ENABLED(CONFIG_RADIX_TREE_MULTIORDER) &&
-					radix_tree_is_internal_node(slot[1])) {
-			if (entry_to_node(slot[1]) == canon) {
-				iter->tags >>= 1;
-				iter->index = __radix_tree_iter_add(iter, 1);
-				slot++;
-				continue;
-			}
-			iter->next_index = __radix_tree_iter_add(iter, 1);
-			return NULL;
-		}
 		if (likely(iter->tags & 1ul)) {
-			iter->index = __radix_tree_iter_add(iter, 1);
+			iter->index++;
 			return slot + 1;
 		}
-		if (!(flags & RADIX_TREE_ITER_CONTIG)) {
+		if (!(flags & RADIX_TREE_ITER_CONTIG) && likely(iter->tags)) {
 			unsigned offset = __ffs(iter->tags);
 
 			iter->tags >>= offset;
-			iter->index = __radix_tree_iter_add(iter, offset + 1);
+			iter->index += offset + 1;
 			return slot + offset + 1;
 		}
 	} else {
-		long count = radix_tree_chunk_size(iter);
-		void *canon = slot;
+		long size = radix_tree_chunk_size(iter);
 
-		while (--count > 0) {
+		while (--size > 0) {
 			slot++;
-			iter->index = __radix_tree_iter_add(iter, 1);
-
-			if (IS_ENABLED(CONFIG_RADIX_TREE_MULTIORDER) &&
-			    radix_tree_is_internal_node(*slot)) {
-				if (entry_to_node(*slot) == canon)
-					continue;
-				iter->next_index = iter->index;
-				break;
-			}
-
+			iter->index++;
 			if (likely(*slot))
 				return slot;
 			if (flags & RADIX_TREE_ITER_CONTIG) {
