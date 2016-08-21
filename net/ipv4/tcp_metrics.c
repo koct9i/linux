@@ -325,14 +325,20 @@ static struct tcp_metrics_block *tcp_get_metrics(struct sock *sk,
 	struct net *net;
 
 	if (sk->sk_family == AF_INET) {
-		inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_saddr);
+		if (sk->sk_state == TCP_NEW_SYN_RECV)
+			inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_rcv_saddr);
+		else
+			inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_saddr);
 		inetpeer_set_addr_v4(&daddr, inet_sk(sk)->inet_daddr);
 		hash = ipv4_addr_hash(inet_sk(sk)->inet_daddr);
 	}
 #if IS_ENABLED(CONFIG_IPV6)
 	else if (sk->sk_family == AF_INET6) {
 		if (ipv6_addr_v4mapped(&sk->sk_v6_daddr)) {
-			inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_saddr);
+			if (sk->sk_state == TCP_NEW_SYN_RECV)
+				inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_rcv_saddr);
+			else
+				inetpeer_set_addr_v4(&saddr, inet_sk(sk)->inet_saddr);
 			inetpeer_set_addr_v4(&daddr, inet_sk(sk)->inet_daddr);
 			hash = ipv4_addr_hash(inet_sk(sk)->inet_daddr);
 		} else {
